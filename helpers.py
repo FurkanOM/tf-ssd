@@ -88,7 +88,7 @@ def get_padded_batch_params():
         padding_values = padding values with dtypes for (images, ground truth boxes, labels)
     """
     padded_shapes = ([None, None, None], [None, None], [None,])
-    padding_values = (tf.constant(0, tf.float32), tf.constant(0, tf.float32), tf.constant(-1, tf.int32))
+    padding_values = (tf.constant(0, tf.uint8), tf.constant(0, tf.float32), tf.constant(-1, tf.int32))
     return padded_shapes, padding_values
 
 def get_VOC_data(split, data_dir="~/tensorflow_datasets"):
@@ -352,21 +352,22 @@ def update_gt_boxes(gt_boxes, final_height, final_width, padding):
     x2 = (tf.round(gt_boxes[:, 3] * org_width) + padding[1]) / final_width
     return tf.stack([y1, x1, y2, x2], axis=1)
 
-def get_padded_img(img, max_height, max_width):
+def get_padded_img(img, final_height, final_width):
     """Generating image centric padded image with zeros.
     inputs:
         img = (height, width, channels)
-        max_height = final image height after padding
-        max_width = final image width after padding
+        final_height = final image height after padding
+        final_width = final image width after padding
 
     outputs:
-        padded_img = (max_height, max_width, channels)
+        padded_img = (final_height, final_width, channels)
     """
-    return tf.image.resize_with_pad(
+    padded_img = tf.image.resize_with_pad(
         tf.image.convert_image_dtype(img, tf.float32),
-        max_height,
-        max_width
+        final_height,
+        final_width
     )
+    return tf.image.convert_image_dtype(padded_img, tf.uint8)
 
 def get_padding(height, width, final_height, final_width):
     """Calculating padding values for image centric operations.
