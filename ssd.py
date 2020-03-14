@@ -58,12 +58,12 @@ class CustomLoss(Layer):
         # Localization / Bbox loss calculation
         y_true_bbox = tf.gather_nd(actual_bbox_deltas, pos_bbox_indices)
         y_pred_bbox = tf.gather_nd(pred_bbox_deltas, pos_bbox_indices)
-        loc_loss_fn = tf.losses.Huber(reduction="sum")
+        loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.SUM)
         loc_loss = loc_loss_fn(y_true_bbox, y_pred_bbox) * self.loc_loss_alpha
         # Confidence / Label loss calculation
         y_true_label = tf.gather_nd(actual_labels, selected_indices)
         y_pred_label = tf.gather_nd(pred_labels, selected_indices)
-        conf_loss_fn = tf.losses.CategoricalCrossentropy(reduction="sum")
+        conf_loss_fn = tf.losses.CategoricalCrossentropy(reduction=tf.losses.Reduction.SUM)
         conf_loss = conf_loss_fn(y_true_label, y_pred_label)
         #
         return loc_loss / total_pos_bboxes, conf_loss / total_pos_bboxes
@@ -129,20 +129,12 @@ def get_model(hyper_params, loc_loss_alpha=10, mode="training"):
     """
     # +1 for ratio 1
     len_aspect_ratios = [len(x) + 1 for x in hyper_params["aspect_ratios"]]
-    input_img = Input(shape=(300, 300, 3), name="input_img")
-    # conv1 block
-    conv1_1 = Conv2D(64, (3, 3), padding="same", activation="relu", name="conv1_1")(input_img)
-    conv1_2 = Conv2D(64, (3, 3), padding="same", activation="relu", name="conv1_2")(conv1_1)
-    pool1 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool1")(conv1_2)
-    # conv2 block
-    conv2_1 = Conv2D(128, (3, 3), padding="same", activation="relu", name="conv2_1")(pool1)
-    conv2_2 = Conv2D(128, (3, 3), padding="same", activation="relu", name="conv2_2")(conv2_1)
-    pool2 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool2")(conv2_2)
-    # conv3 block
-    conv3_1 = Conv2D(256, (3, 3), padding="same", activation="relu", name="conv3_1")(pool2)
-    conv3_2 = Conv2D(256, (3, 3), padding="same", activation="relu", name="conv3_2")(conv3_1)
-    conv3_3 = Conv2D(256, (3, 3), padding="same", activation="relu", name="conv3_3")(conv3_2)
-    pool3 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool3")(conv3_3)
+    img_size = hyper_params["img_size"]
+    #
+    base_model = VGG16(include_top=False, input_shape=(img_size, img_size, 3))
+    base_model = Sequential(base_model.layers[:10])
+    #
+    pool3 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool3")(base_model.output)
     # conv4 block
     conv4_1 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv4_1")(pool3)
     conv4_2 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv4_2")(conv4_1)
@@ -194,7 +186,7 @@ def get_model(hyper_params, loc_loss_alpha=10, mode="training"):
     pred_labels = Activation("softmax", name="softmax_activation")(pred_labels)
     #
     pred_bbox_deltas = HeadWrapper(4, name="boxes_head")([conv4_3_boxes, conv7_boxes, conv8_2_boxes,
-                                                      conv9_2_boxes, conv10_2_boxes, conv11_2_boxes])
+                                                     conv9_2_boxes, conv10_2_boxes, conv11_2_boxes])
     #
     if mode == "training":
         actual_bbox_deltas = Input(shape=(None, 4), name="input_bbox_deltas", dtype=tf.float32)
@@ -203,7 +195,7 @@ def get_model(hyper_params, loc_loss_alpha=10, mode="training"):
         loc_loss, conf_loss = CustomLoss(hyper_params["neg_pos_ratio"], loc_loss_alpha, name="custom_loss_calculation")(
                                             [actual_bbox_deltas, actual_labels, pred_bbox_deltas, pred_labels])
         #
-        ssd_model = Model(inputs=[input_img, actual_bbox_deltas, actual_labels],
+        ssd_model = Model(inputs=[base_model.input, actual_bbox_deltas, actual_labels],
                           outputs=[pred_bbox_deltas, pred_labels, loc_loss, conf_loss])
         #
         ssd_model.add_loss(loc_loss)
@@ -211,7 +203,7 @@ def get_model(hyper_params, loc_loss_alpha=10, mode="training"):
         ssd_model.add_loss(conf_loss)
         ssd_model.add_metric(conf_loss, name="conf_loss", aggregation="mean")
     else:
-        ssd_model = Model(inputs=input_img, outputs=[pred_bbox_deltas, pred_labels])
+        ssd_model = Model(inputs=base_model.input, outputs=[pred_bbox_deltas, pred_labels])
     return ssd_model
 
 def get_scale_for_nth_feature_map(k, m=6, scale_min=0.2, scale_max=0.9):
@@ -303,10 +295,12 @@ def generate_prior_boxes(img_size, feature_map_shapes, aspect_ratios):
     prior_boxes = np.concatenate(prior_boxes, axis=0)
     return np.clip(prior_boxes, 0, 1)
 
-def generator(dataset, hyper_params, input_processor):
+def generator(dataset, prior_boxes, hyper_params, input_processor):
     """Tensorflow data generator for fit method, yielding inputs and outputs.
     inputs:
         dataset = tf.data.Dataset, PaddedBatchDataset
+        prior_boxes = (total_prior_boxes, [y1, x1, y2, x2])
+            these values in normalized format between [0, 1]
         hyper_params = dictionary
         input_processor = function for preparing image for input. It's getting from backbone.
 
@@ -315,10 +309,10 @@ def generator(dataset, hyper_params, input_processor):
     """
     while True:
         for image_data in dataset:
-            input_img, bbox_deltas, bbox_labels, _ = get_step_data(image_data, hyper_params, input_processor)
+            input_img, bbox_deltas, bbox_labels = get_step_data(image_data, prior_boxes, hyper_params, input_processor)
             yield (input_img, bbox_deltas, bbox_labels), ()
 
-def get_step_data(image_data, hyper_params, input_processor, mode="training"):
+def get_step_data(image_data, prior_boxes, hyper_params, input_processor, mode="training"):
     """Generating one step data for training or inference.
     Batch operations supported.
     inputs:
@@ -327,6 +321,8 @@ def get_step_data(image_data, hyper_params, input_processor, mode="training"):
             gt_boxes (batch_size, gt_box_size, [y1, x1, y2, x2])
                 these values in normalized format between [0, 1]
             gt_labels (batch_size, gt_box_size)
+        prior_boxes = (total_prior_boxes, [y1, x1, y2, x2])
+            these values in normalized format between [0, 1]
         hyper_params = dictionary
         input_processor = function for preparing image for input. It's getting from backbone.
 
@@ -337,8 +333,6 @@ def get_step_data(image_data, hyper_params, input_processor, mode="training"):
             calculating only training mode
         bbox_labels = (batch_size, total_bboxes, [0,0,...,0])
             calculating only training mode
-        prior_boxes = (batch_size, total_bboxes, [y1, x1, y2, x2])
-            these values in normalized format between [0, 1]
     """
     img, gt_boxes, gt_labels = image_data
     img_shape = tf.shape(img)
@@ -348,25 +342,21 @@ def get_step_data(image_data, hyper_params, input_processor, mode="training"):
     assert img_height == img_width
     assert img_width == img_size
     total_labels = hyper_params["total_labels"]
-    feature_map_shapes = hyper_params["feature_map_shapes"]
-    aspect_ratios = hyper_params["aspect_ratios"]
     iou_threshold = hyper_params["iou_threshold"]
-    prior_boxes = generate_prior_boxes(img_size, feature_map_shapes, aspect_ratios)
-    # We use same prior_boxes for each batch so we multiplied prior_boxes to the batch size
-    prior_boxes = tf.reshape(tf.tile(prior_boxes, (batch_size, 1)), (batch_size, prior_boxes.shape[0], 4))
+    total_prior_boxes = prior_boxes.shape[0]
     if mode != "training":
-        return input_img, prior_boxes
+        return input_img
     ################################################################################################################
     pos_bbox_indices, gt_box_indices = helpers.get_selected_indices(prior_boxes, gt_boxes, iou_threshold)
     #
     gt_boxes_map = tf.gather_nd(gt_boxes, gt_box_indices)
-    expanded_gt_boxes = tf.scatter_nd(pos_bbox_indices, gt_boxes_map, tf.shape(prior_boxes))
+    expanded_gt_boxes = tf.scatter_nd(pos_bbox_indices, gt_boxes_map, (batch_size, total_prior_boxes, 4))
     bbox_deltas = helpers.get_deltas_from_bboxes(prior_boxes, expanded_gt_boxes)
     #
     pos_gt_labels_map = tf.gather_nd(gt_labels, gt_box_indices)
     pos_gt_labels_map = tf.one_hot(pos_gt_labels_map, total_labels)
-    bbox_labels = tf.fill((batch_size, prior_boxes.shape[1]), total_labels-1)
+    bbox_labels = tf.fill((batch_size, total_prior_boxes), total_labels-1)
     bbox_labels = tf.one_hot(bbox_labels, total_labels)
     bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, pos_bbox_indices, pos_gt_labels_map)
     #
-    return input_img, bbox_deltas, bbox_labels, prior_boxes
+    return input_img, bbox_deltas, bbox_labels
