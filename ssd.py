@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
+from tensorflow.keras.applications.vgg16 import VGG16
 from tensorflow.keras.layers import Layer, Lambda, Input, Conv2D, MaxPool2D, Activation
 from tensorflow.keras.models import Model
 import helpers
@@ -54,7 +54,7 @@ class CustomLoss(Layer):
         # Merge pos and neg indices for confidence loss calculation
         selected_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
         #
-        total_pos_bboxes = tf.cast(tf.maximum(tf.reduce_sum(pos_bbox_count), 1), tf.float32)
+        total_pos_bboxes = tf.cast(tf.reduce_sum(pos_bbox_count), tf.float32)
         # Localization / Bbox loss calculation
         y_true_bbox = tf.gather_nd(actual_bbox_deltas, pos_bbox_indices)
         y_pred_bbox = tf.gather_nd(pred_bbox_deltas, pos_bbox_indices)
@@ -63,10 +63,12 @@ class CustomLoss(Layer):
         # Confidence / Label loss calculation
         y_true_label = tf.gather_nd(actual_labels, selected_indices)
         y_pred_label = tf.gather_nd(pred_labels, selected_indices)
-        conf_loss_fn = tf.losses.CategoricalCrossentropy(reduction=tf.losses.Reduction.SUM)
+        conf_loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True, reduction=tf.losses.Reduction.SUM)
         conf_loss = conf_loss_fn(y_true_label, y_pred_label)
         #
-        return loc_loss / total_pos_bboxes, conf_loss / total_pos_bboxes
+        loc_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), loc_loss / total_pos_bboxes, 0.0)
+        conf_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), conf_loss / total_pos_bboxes, 0.0)
+        return loc_loss, conf_loss
 
 class HeadWrapper(Layer):
     """Merging all feature maps for detections.
@@ -309,44 +311,30 @@ def generator(dataset, prior_boxes, hyper_params, input_processor):
     """
     while True:
         for image_data in dataset:
-            input_img, bbox_deltas, bbox_labels = get_step_data(image_data, prior_boxes, hyper_params, input_processor)
+            img, gt_boxes, gt_labels = image_data
+            input_img = input_processor(img)
+            bbox_deltas, bbox_labels = calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
             yield (input_img, bbox_deltas, bbox_labels), ()
 
-def get_step_data(image_data, prior_boxes, hyper_params, input_processor, mode="training"):
-    """Generating one step data for training or inference.
+def calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
+    """Calculate ssd actual output values.
     Batch operations supported.
     inputs:
-        image_data =
-            img (batch_size, height, width, channels)
-            gt_boxes (batch_size, gt_box_size, [y1, x1, y2, x2])
-                these values in normalized format between [0, 1]
-            gt_labels (batch_size, gt_box_size)
         prior_boxes = (total_prior_boxes, [y1, x1, y2, x2])
             these values in normalized format between [0, 1]
+        gt_boxes (batch_size, gt_box_size, [y1, x1, y2, x2])
+            these values in normalized format between [0, 1]
+        gt_labels (batch_size, gt_box_size)
         hyper_params = dictionary
-        input_processor = function for preparing image for input. It's getting from backbone.
 
     outputs:
-        input_img = (batch_size, height, width, channels)
-            preprocessed image using input_processor
         bbox_deltas = (batch_size, total_bboxes, [delta_y, delta_x, delta_h, delta_w])
-            calculating only training mode
         bbox_labels = (batch_size, total_bboxes, [0,0,...,0])
-            calculating only training mode
     """
-    img, gt_boxes, gt_labels = image_data
-    img_shape = tf.shape(img)
-    batch_size, img_height, img_width = img_shape[0], img_shape[1], img_shape[2]
-    input_img = input_processor(img)
-    img_size = hyper_params["img_size"]
-    assert img_height == img_width
-    assert img_width == img_size
+    batch_size = tf.shape(gt_boxes)[0]
     total_labels = hyper_params["total_labels"]
     iou_threshold = hyper_params["iou_threshold"]
     total_prior_boxes = prior_boxes.shape[0]
-    if mode != "training":
-        return input_img
-    ################################################################################################################
     pos_bbox_indices, gt_box_indices = helpers.get_selected_indices(prior_boxes, gt_boxes, iou_threshold)
     #
     gt_boxes_map = tf.gather_nd(gt_boxes, gt_box_indices)
@@ -359,4 +347,4 @@ def get_step_data(image_data, prior_boxes, hyper_params, input_processor, mode="
     bbox_labels = tf.one_hot(bbox_labels, total_labels)
     bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, pos_bbox_indices, pos_gt_labels_map)
     #
-    return input_img, bbox_deltas, bbox_labels
+    return bbox_deltas, bbox_labels

@@ -5,8 +5,6 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 import numpy as np
-import random
-import math
 
 SSD = {
     "ssd300": {
@@ -257,7 +255,7 @@ def generate_iou_map(bboxes, gt_boxes):
     # Intersection over Union
     return intersection_area / union_area
 
-def get_selected_indices(bboxes, gt_boxes, iou_threshold=0.5):
+def get_selected_indices(bboxes, gt_boxes, iou_threshold):
     """Calculating indices for each bounding box and correspond ground truth box.
     inputs:
         bboxes = (total_bboxes, [y1, x1, y2, x2])

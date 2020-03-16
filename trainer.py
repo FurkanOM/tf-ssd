@@ -1,6 +1,7 @@
 import tensorflow as tf
-from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
+from tensorflow.keras.applications.vgg16 import preprocess_input
 import helpers
+import augmentation
 import ssd
 
 args = helpers.handle_args()
@@ -24,6 +25,7 @@ hyper_params["total_labels"] = len(labels) + 1
 img_size = helpers.SSD[ssd_type]["img_size"]
 
 VOC_train_data = VOC_train_data.map(lambda x : helpers.preprocessing(x, img_size, img_size))
+VOC_train_data = VOC_train_data.map(lambda x,y,z : augmentation.apply(x,y,z))
 VOC_val_data = VOC_val_data.map(lambda x : helpers.preprocessing(x, img_size, img_size))
 
 padded_shapes, padding_values = helpers.get_padded_batch_params()
@@ -47,8 +49,8 @@ custom_callback = helpers.CustomCallback(ssd_model_path, monitor="val_loss", pat
 step_size_train = VOC_train_total_items // train_batch_size
 step_size_val = VOC_val_total_items // val_batch_size
 ssd_model.fit(ssd_train_feed,
-                steps_per_epoch=step_size_train,
-                validation_data=ssd_val_feed,
-                validation_steps=step_size_val,
-                epochs=epochs,
-                callbacks=[custom_callback])
+              steps_per_epoch=step_size_train,
+              validation_data=ssd_val_feed,
+              validation_steps=step_size_val,
+              epochs=epochs,
+              callbacks=[custom_callback])
