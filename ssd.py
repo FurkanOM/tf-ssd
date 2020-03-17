@@ -40,7 +40,7 @@ class CustomLoss(Layer):
         pos_bbox_indices = tf.where(pos_cond)
         pos_bbox_count = tf.math.count_nonzero(pos_cond, axis=1)
         # Hard negative mining
-        neg_bbox_indices_count = pos_bbox_count * int(self.neg_pos_ratio)
+        neg_bbox_indices_count = tf.cast(pos_bbox_count * int(self.neg_pos_ratio), tf.int32)
         pre_loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True, reduction=tf.losses.Reduction.NONE)
         loss = pre_loss_fn(actual_labels, pred_labels)
         # Remove positive index values from negative calculations
@@ -48,7 +48,7 @@ class CustomLoss(Layer):
         # Sort loss values in descending order
         sorted_loss = tf.cast(tf.argsort(masked_loss, direction="DESCENDING"), tf.int64)
         batch_size, total_items = tf.shape(sorted_loss)[0], tf.shape(sorted_loss)[1]
-        sorted_loss_indices = tf.tile([tf.range(total_items, dtype=tf.int64)], (batch_size, 1))
+        sorted_loss_indices = tf.tile([tf.range(total_items)], (batch_size, 1))
         neg_cond = sorted_loss_indices < tf.expand_dims(neg_bbox_indices_count, 1)
         neg_bbox_indices = tf.stack([tf.where(neg_cond)[:,0], sorted_loss[neg_cond]], 1)
         # Merge pos and neg indices for confidence loss calculation
@@ -119,7 +119,7 @@ class HeadWrapper(Layer):
         return tf.concat([conv4_3_reshaped, conv7_reshaped, conv8_2_reshaped,
                           conv9_2_reshaped, conv10_2_reshaped, conv11_2_reshaped], axis=1)
 
-def get_model(hyper_params, loc_loss_alpha=10, mode="training"):
+def get_model(hyper_params, mode="training"):
     """Generating ssd model for hyper params.
     inputs:
         hyper_params = dictionary
@@ -194,7 +194,7 @@ def get_model(hyper_params, loc_loss_alpha=10, mode="training"):
         actual_bbox_deltas = Input(shape=(None, 4), name="input_bbox_deltas", dtype=tf.float32)
         actual_labels = Input(shape=(None, hyper_params["total_labels"]), name="input_labels", dtype=tf.float32)
         #
-        loc_loss, conf_loss = CustomLoss(hyper_params["neg_pos_ratio"], loc_loss_alpha, name="custom_loss_calculation")(
+        loc_loss, conf_loss = CustomLoss(hyper_params["neg_pos_ratio"], hyper_params["loc_loss_alpha"], name="custom_loss_calculation")(
                                             [actual_bbox_deltas, actual_labels, pred_bbox_deltas, pred_labels])
         #
         ssd_model = Model(inputs=[base_model.input, actual_bbox_deltas, actual_labels],
@@ -263,11 +263,10 @@ def generate_base_prior_boxes(stride, height_width_pairs):
         base_prior_boxes.append([y_min, x_min, y_max, x_max])
     return np.array(base_prior_boxes, dtype=np.float32)
 
-def generate_prior_boxes(img_size, feature_map_shapes, aspect_ratios):
+def generate_prior_boxes(feature_map_shapes, aspect_ratios):
     """Generating top left prior boxes for given stride, height and width pairs of different aspect ratios.
     These prior boxes same with the anchors in Faster-RCNN.
     inputs:
-        img_size = image size width and height must be equal
         feature_map_shapes = for all feature map output size
         aspect_ratios = for all feature map shapes + 1 for ratio 1
 
@@ -279,19 +278,17 @@ def generate_prior_boxes(img_size, feature_map_shapes, aspect_ratios):
     for i, feature_map_shape in enumerate(feature_map_shapes):
         prior_box_count = len(aspect_ratios[i]) + 1
         height_width_pairs = get_height_width_pairs(aspect_ratios[i], i+1, len(feature_map_shapes))
-        stride = round(img_size / feature_map_shape)
-        base_prior_boxes = generate_base_prior_boxes(stride / img_size, height_width_pairs)
+        base_prior_boxes = generate_base_prior_boxes(1 / feature_map_shape, height_width_pairs)
         #
-        grid_coords = np.arange(0, feature_map_shape) * stride
+        grid_coords = np.arange(0, feature_map_shape)
         #
         grid_x, grid_y = np.meshgrid(grid_coords, grid_coords)
         grid_map = np.vstack((grid_y.ravel(), grid_x.ravel(), grid_y.ravel(), grid_x.ravel())).transpose()
-        #
-        norm_grid_map = helpers.normalize_bboxes(grid_map, img_size, img_size)
+        grid_map = grid_map / feature_map_shape
         #
         output_area = feature_map_shape ** 2
         prior_boxes_for_feature_map = base_prior_boxes.reshape((1, prior_box_count, 4)) + \
-                                      norm_grid_map.reshape((1, output_area, 4)).transpose((1, 0, 2))
+                                      grid_map.reshape((1, output_area, 4)).transpose((1, 0, 2))
         prior_boxes_for_feature_map = prior_boxes_for_feature_map.reshape((output_area * prior_box_count, 4)).astype(np.float32)
         prior_boxes.append(prior_boxes_for_feature_map)
     prior_boxes = np.concatenate(prior_boxes, axis=0)

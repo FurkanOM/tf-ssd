@@ -87,7 +87,7 @@ def random_rotate(img, gt_boxes):
     return img, gt_boxes
 
 def rotate(img, gt_boxes):
-    max_rotation_degree = 30
+    max_rotation_degree = 15
     random_degree = random.uniform(-max_rotation_degree, max_rotation_degree)
     random_angle = random_degree * math.pi / 180
     rotated_img = tfa.image.rotate(img, angles=-random_angle)

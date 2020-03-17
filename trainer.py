@@ -40,7 +40,7 @@ if load_weights:
     ssd_model.load_weights(ssd_model_path)
 
 # We calculate prior boxes for one time and use it for all operations because of the all images are the same sizes
-prior_boxes = ssd.generate_prior_boxes(hyper_params["img_size"], hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
+prior_boxes = ssd.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
 ssd_train_feed = ssd.generator(VOC_train_data, prior_boxes, hyper_params, preprocess_input)
 ssd_val_feed = ssd.generator(VOC_val_data, prior_boxes, hyper_params, preprocess_input)
 
