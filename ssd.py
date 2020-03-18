@@ -36,35 +36,33 @@ class CustomLoss(Layer):
         pred_bbox_deltas = inputs[2]
         pred_labels = inputs[3]
         #
+        # Confidence / Label loss calculation for all labels
+        conf_loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True, reduction=tf.losses.Reduction.NONE)
+        conf_loss_for_all = conf_loss_fn(actual_labels, pred_labels)
+        #
         pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, 0), axis=2)
         pos_bbox_indices = tf.where(pos_cond)
         pos_bbox_count = tf.math.count_nonzero(pos_cond, axis=1)
         # Hard negative mining
         neg_bbox_indices_count = tf.cast(pos_bbox_count * int(self.neg_pos_ratio), tf.int32)
-        pre_loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True, reduction=tf.losses.Reduction.NONE)
-        loss = pre_loss_fn(actual_labels, pred_labels)
         # Remove positive index values from negative calculations
-        masked_loss = tf.where(pos_cond, float("-inf"), loss)
+        masked_loss = tf.where(pos_cond, float("-inf"), conf_loss_for_all)
         # Sort loss values in descending order
         sorted_loss = tf.cast(tf.argsort(masked_loss, direction="DESCENDING"), tf.int64)
         batch_size, total_items = tf.shape(sorted_loss)[0], tf.shape(sorted_loss)[1]
         sorted_loss_indices = tf.tile([tf.range(total_items)], (batch_size, 1))
         neg_cond = sorted_loss_indices < tf.expand_dims(neg_bbox_indices_count, 1)
         neg_bbox_indices = tf.stack([tf.where(neg_cond)[:,0], sorted_loss[neg_cond]], 1)
-        # Merge pos and neg indices for confidence loss calculation
-        selected_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
         #
         total_pos_bboxes = tf.cast(tf.reduce_sum(pos_bbox_count), tf.float32)
-        # Localization / Bbox loss calculation
+        # Localization / Bbox loss calculation for pos bounding boxes
         y_true_bbox = tf.gather_nd(actual_bbox_deltas, pos_bbox_indices)
         y_pred_bbox = tf.gather_nd(pred_bbox_deltas, pos_bbox_indices)
         loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.SUM)
         loc_loss = loc_loss_fn(y_true_bbox, y_pred_bbox) * self.loc_loss_alpha
-        # Confidence / Label loss calculation
-        y_true_label = tf.gather_nd(actual_labels, selected_indices)
-        y_pred_label = tf.gather_nd(pred_labels, selected_indices)
-        conf_loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True, reduction=tf.losses.Reduction.SUM)
-        conf_loss = conf_loss_fn(y_true_label, y_pred_label)
+        # Confidence / Label loss calculation for pos + neg bounding boxes
+        selected_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
+        conf_loss = tf.reduce_sum(tf.gather_nd(conf_loss_for_all, selected_indices))
         #
         loc_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), loc_loss / total_pos_bboxes, 0.0)
         conf_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), conf_loss / total_pos_bboxes, 0.0)
