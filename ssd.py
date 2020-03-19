@@ -329,12 +329,13 @@ def calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
     batch_size = tf.shape(gt_boxes)[0]
     total_labels = hyper_params["total_labels"]
     iou_threshold = hyper_params["iou_threshold"]
+    variances = hyper_params["variances"]
     total_prior_boxes = prior_boxes.shape[0]
     pos_bbox_indices, gt_box_indices = helpers.get_selected_indices(prior_boxes, gt_boxes, iou_threshold)
     #
     gt_boxes_map = tf.gather_nd(gt_boxes, gt_box_indices)
     expanded_gt_boxes = tf.scatter_nd(pos_bbox_indices, gt_boxes_map, (batch_size, total_prior_boxes, 4))
-    bbox_deltas = helpers.get_deltas_from_bboxes(prior_boxes, expanded_gt_boxes)
+    bbox_deltas = helpers.get_deltas_from_bboxes(prior_boxes, expanded_gt_boxes) / variances
     #
     pos_gt_labels_map = tf.gather_nd(gt_labels, gt_box_indices)
     pos_gt_labels_map = tf.one_hot(pos_gt_labels_map, total_labels)

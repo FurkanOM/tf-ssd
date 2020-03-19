@@ -75,7 +75,8 @@ def get_hyper_params(ssd_type, **kwargs):
     hyper_params = SSD[ssd_type]
     hyper_params["iou_threshold"] = 0.5
     hyper_params["neg_pos_ratio"] = 3
-    hyper_params["loc_loss_alpha"] = 10
+    hyper_params["loc_loss_alpha"] = 1
+    hyper_params["variances"] = [0.1, 0.1, 0.2, 0.2]
     for key, value in kwargs.items():
         if key in hyper_params and value:
             hyper_params[key] = value
