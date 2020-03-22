@@ -1,8 +1,7 @@
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.applications.vgg16 import VGG16
+from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from tensorflow.keras.layers import Layer, Lambda, Input, Conv2D, MaxPool2D, Activation
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, Sequential
 import helpers
 import numpy as np
 import math
@@ -99,39 +98,29 @@ class HeadWrapper(Layer):
         return config
 
     def call(self, inputs):
-        conv4_3 = inputs[0]
-        conv7 = inputs[1]
-        conv8_2 = inputs[2]
-        conv9_2 = inputs[3]
-        conv10_2 = inputs[4]
-        conv11_2 = inputs[5]
         last_dimension = self.last_dimension
-        batch_size = tf.shape(conv4_3)[0]
+        batch_size = tf.shape(inputs[0])[0]
+        outputs = []
+        for conv_layer in inputs:
+            outputs.append(tf.reshape(conv_layer, (batch_size, -1, last_dimension)))
         #
-        conv4_3_reshaped = tf.reshape(conv4_3, (batch_size, -1, last_dimension))
-        conv7_reshaped = tf.reshape(conv7, (batch_size, -1, last_dimension))
-        conv8_2_reshaped = tf.reshape(conv8_2, (batch_size, -1, last_dimension))
-        conv9_2_reshaped = tf.reshape(conv9_2, (batch_size, -1, last_dimension))
-        conv10_2_reshaped = tf.reshape(conv10_2, (batch_size, -1, last_dimension))
-        conv11_2_reshaped = tf.reshape(conv11_2, (batch_size, -1, last_dimension))
-        return tf.concat([conv4_3_reshaped, conv7_reshaped, conv8_2_reshaped,
-                          conv9_2_reshaped, conv10_2_reshaped, conv11_2_reshaped], axis=1)
+        return tf.concat(outputs, axis=1)
 
 def get_model(hyper_params, mode="training"):
     """Generating ssd model for hyper params.
     inputs:
         hyper_params = dictionary
-        loc_loss_alpha = localization loss multiplier, to prevent the imbalanced loss calculation
         mode = "training" or "inference"
 
     outputs:
         ssd_model = tf.keras.model
     """
     # +1 for ratio 1
+    total_labels = hyper_params["total_labels"]
     len_aspect_ratios = [len(x) + 1 for x in hyper_params["aspect_ratios"]]
     img_size = hyper_params["img_size"]
     #
-    base_model = VGG16(include_top=False, input_shape=(img_size, img_size, 3))
+    base_model = VGG16(include_top=False)
     base_model = Sequential(base_model.layers[:10])
     #
     pool3 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool3")(base_model.output)
@@ -167,12 +156,12 @@ def get_model(hyper_params, mode="training"):
     # l2 normalization for each location in the feature map
     conv4_3_norm = Lambda(tf.nn.l2_normalize, arguments={"axis":-1})(conv4_3)
     #
-    conv4_3_labels = Conv2D(len_aspect_ratios[0] * hyper_params["total_labels"], (3, 3), padding="same", name="conv4_3_label_output")(conv4_3_norm)
-    conv7_labels = Conv2D(len_aspect_ratios[1] * hyper_params["total_labels"], (3, 3), padding="same", name="conv7_label_output")(conv7)
-    conv8_2_labels = Conv2D(len_aspect_ratios[2] * hyper_params["total_labels"], (3, 3), padding="same", name="conv8_2_label_output")(conv8_2)
-    conv9_2_labels = Conv2D(len_aspect_ratios[3] * hyper_params["total_labels"], (3, 3), padding="same", name="conv9_2_label_output")(conv9_2)
-    conv10_2_labels = Conv2D(len_aspect_ratios[4] * hyper_params["total_labels"], (3, 3), padding="same", name="conv10_2_label_output")(conv10_2)
-    conv11_2_labels = Conv2D(len_aspect_ratios[5] * hyper_params["total_labels"], (3, 3), padding="same", name="conv11_2_label_output")(conv11_2)
+    conv4_3_labels = Conv2D(len_aspect_ratios[0] * total_labels, (3, 3), padding="same", name="conv4_3_label_output")(conv4_3_norm)
+    conv7_labels = Conv2D(len_aspect_ratios[1] * total_labels, (3, 3), padding="same", name="conv7_label_output")(conv7)
+    conv8_2_labels = Conv2D(len_aspect_ratios[2] * total_labels, (3, 3), padding="same", name="conv8_2_label_output")(conv8_2)
+    conv9_2_labels = Conv2D(len_aspect_ratios[3] * total_labels, (3, 3), padding="same", name="conv9_2_label_output")(conv9_2)
+    conv10_2_labels = Conv2D(len_aspect_ratios[4] * total_labels, (3, 3), padding="same", name="conv10_2_label_output")(conv10_2)
+    conv11_2_labels = Conv2D(len_aspect_ratios[5] * total_labels, (3, 3), padding="same", name="conv11_2_label_output")(conv11_2)
     #
     conv4_3_boxes = Conv2D(len_aspect_ratios[0] * 4, (3, 3), padding="same", name="conv4_3_boxes_output")(conv4_3_norm)
     conv7_boxes = Conv2D(len_aspect_ratios[1] * 4, (3, 3), padding="same", name="conv7_boxes_output")(conv7)
@@ -181,9 +170,8 @@ def get_model(hyper_params, mode="training"):
     conv10_2_boxes = Conv2D(len_aspect_ratios[4] * 4, (3, 3), padding="same", name="conv10_2_boxes_output")(conv10_2)
     conv11_2_boxes = Conv2D(len_aspect_ratios[5] * 4, (3, 3), padding="same", name="conv11_2_boxes_output")(conv11_2)
     #
-    pred_labels = HeadWrapper(hyper_params["total_labels"], name="labels_head")([conv4_3_labels, conv7_labels, conv8_2_labels,
+    pred_labels = HeadWrapper(total_labels, name="labels_head")([conv4_3_labels, conv7_labels, conv8_2_labels,
                                                                    conv9_2_labels, conv10_2_labels, conv11_2_labels])
-    pred_labels = Activation("softmax", name="softmax_activation")(pred_labels)
     #
     pred_bbox_deltas = HeadWrapper(4, name="boxes_head")([conv4_3_boxes, conv7_boxes, conv8_2_boxes,
                                                      conv9_2_boxes, conv10_2_boxes, conv11_2_boxes])
@@ -204,6 +192,8 @@ def get_model(hyper_params, mode="training"):
         ssd_model.add_metric(conf_loss, name="conf_loss", aggregation="mean")
     else:
         ssd_model = Model(inputs=base_model.input, outputs=[pred_bbox_deltas, pred_labels])
+    dummy_initializer = get_dummy_initializer(hyper_params, mode)
+    ssd_model(dummy_initializer)
     return ssd_model
 
 def get_scale_for_nth_feature_map(k, m=6, scale_min=0.2, scale_max=0.9):
@@ -292,14 +282,13 @@ def generate_prior_boxes(feature_map_shapes, aspect_ratios):
     prior_boxes = np.concatenate(prior_boxes, axis=0)
     return np.clip(prior_boxes, 0, 1)
 
-def generator(dataset, prior_boxes, hyper_params, input_processor):
+def generator(dataset, prior_boxes, hyper_params):
     """Tensorflow data generator for fit method, yielding inputs and outputs.
     inputs:
         dataset = tf.data.Dataset, PaddedBatchDataset
         prior_boxes = (total_prior_boxes, [y1, x1, y2, x2])
             these values in normalized format between [0, 1]
         hyper_params = dictionary
-        input_processor = function for preparing image for input. It's getting from backbone.
 
     outputs:
         yield inputs, outputs
@@ -307,7 +296,8 @@ def generator(dataset, prior_boxes, hyper_params, input_processor):
     while True:
         for image_data in dataset:
             img, gt_boxes, gt_labels = image_data
-            input_img = input_processor(img)
+            input_img = preprocess_input(img)
+            input_img = tf.image.convert_image_dtype(input_img, tf.float32)
             bbox_deltas, bbox_labels = calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
             yield (input_img, bbox_deltas, bbox_labels), ()
 
@@ -344,3 +334,14 @@ def calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
     bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, pos_bbox_indices, pos_gt_labels_map)
     #
     return bbox_deltas, bbox_labels
+
+def get_dummy_initializer(hyper_params, mode="training"):
+    x2_img_size = 512
+    img = tf.random.uniform((1, x2_img_size, x2_img_size, 3))
+    if mode != "training":
+        return img
+    x2_boxes = 24656
+    total_labels = hyper_params["total_labels"]
+    bbox_deltas = tf.random.uniform((1, x2_boxes, 4)),
+    bbox_labels = tf.random.uniform((1, x2_boxes, total_labels), dtype=tf.int32, maxval=total_labels)
+    return img, bbox_deltas, bbox_labels

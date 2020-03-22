@@ -69,7 +69,7 @@ def rotate_bboxes(gt_boxes, angle):
     # we translate all corners to new origin
     corners = get_corners(gt_boxes) - new_origin
     # rotate all corners by the given angle
-    rotated_corners = tf.matmul(corners, tf.transpose(rotation_matrix)) + new_origin
+    rotated_corners = tf.matmul(corners, rotation_matrix, transpose_b=True) + new_origin
     # select min and max coordinates of corners for new bounding boxes
     x_min = tf.reduce_min(rotated_corners[..., 0], 1)
     x_max = tf.reduce_max(rotated_corners[..., 0], 1)
