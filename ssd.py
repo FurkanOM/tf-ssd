@@ -1,10 +1,36 @@
 import tensorflow as tf
 from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
-from tensorflow.keras.layers import Layer, Lambda, Input, Conv2D, MaxPool2D, Activation
+from tensorflow.keras.layers import Layer, Input, Conv2D, MaxPool2D, Activation
 from tensorflow.keras.models import Model, Sequential
 import helpers
 import numpy as np
 import math
+
+class L2Normalization(Layer):
+    """Normalizing different scale features for fusion.
+    paper: https://arxiv.org/abs/1506.04579
+    inputs:
+        feature_map = (batch_size, feature_map_height, feature_map_width, depth)
+
+    outputs:
+        normalized_feature_map = (batch_size, feature_map_height, feature_map_width, depth)
+    """
+    def __init__(self, scale_factor, **kwargs):
+        super(L2Normalization, self).__init__(**kwargs)
+        self.scale_factor = scale_factor
+
+    def get_config(self):
+        config = super(L2Normalization, self).get_config()
+        config.update({"scale_factor": self.scale_factor})
+        return config
+
+    def build(self, input_shape):
+        # Network need to learn scale factor for each channel
+        init_scale_factor = tf.fill((input_shape[-1],), float(self.scale_factor))
+        self.scale = tf.Variable(init_scale_factor, trainable=True)
+
+    def call(self, inputs):
+        return tf.nn.l2_normalize(inputs, axis=-1) * self.scale
 
 class CustomLoss(Layer):
     """Calculating SSD loss values by performing hard negative mining as mentioned in the paper.
@@ -30,13 +56,13 @@ class CustomLoss(Layer):
         return config
 
     def call(self, inputs):
-        actual_bbox_deltas = inputs[0]
-        actual_labels = inputs[1]
+        actual_bbox_deltas = tf.stop_gradient(inputs[0])
+        actual_labels = tf.stop_gradient(inputs[1])
         pred_bbox_deltas = inputs[2]
         pred_labels = inputs[3]
         #
         # Confidence / Label loss calculation for all labels
-        conf_loss_fn = tf.losses.CategoricalCrossentropy(from_logits=True, reduction=tf.losses.Reduction.NONE)
+        conf_loss_fn = tf.losses.CategoricalCrossentropy(reduction=tf.losses.Reduction.NONE)
         conf_loss_for_all = conf_loss_fn(actual_labels, pred_labels)
         #
         pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, 0), axis=2)
@@ -115,14 +141,13 @@ def get_model(hyper_params, mode="training"):
     outputs:
         ssd_model = tf.keras.model
     """
-    # +1 for ratio 1
+    scale_factor = 20.0
     total_labels = hyper_params["total_labels"]
+    # +1 for ratio 1
     len_aspect_ratios = [len(x) + 1 for x in hyper_params["aspect_ratios"]]
-    img_size = hyper_params["img_size"]
     #
     base_model = VGG16(include_top=False)
     base_model = Sequential(base_model.layers[:10])
-    #
     pool3 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool3")(base_model.output)
     # conv4 block
     conv4_1 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv4_1")(pool3)
@@ -154,7 +179,7 @@ def get_model(hyper_params, mode="training"):
     conv11_2 = Conv2D(256, (3, 3), strides=(1, 1), padding="valid", activation="relu", name="conv11_2")(conv11_1)
     ############################ Extra Feature Layers End ############################
     # l2 normalization for each location in the feature map
-    conv4_3_norm = Lambda(tf.nn.l2_normalize, arguments={"axis":-1})(conv4_3)
+    conv4_3_norm = L2Normalization(scale_factor)(conv4_3)
     #
     conv4_3_labels = Conv2D(len_aspect_ratios[0] * total_labels, (3, 3), padding="same", name="conv4_3_label_output")(conv4_3_norm)
     conv7_labels = Conv2D(len_aspect_ratios[1] * total_labels, (3, 3), padding="same", name="conv7_label_output")(conv7)
@@ -172,6 +197,7 @@ def get_model(hyper_params, mode="training"):
     #
     pred_labels = HeadWrapper(total_labels, name="labels_head")([conv4_3_labels, conv7_labels, conv8_2_labels,
                                                                    conv9_2_labels, conv10_2_labels, conv11_2_labels])
+    pred_labels = Activation("softmax", name="softmax_activation")(pred_labels)
     #
     pred_bbox_deltas = HeadWrapper(4, name="boxes_head")([conv4_3_boxes, conv7_boxes, conv8_2_boxes,
                                                      conv9_2_boxes, conv10_2_boxes, conv11_2_boxes])
@@ -206,7 +232,7 @@ def get_scale_for_nth_feature_map(k, m=6, scale_min=0.2, scale_max=0.9):
     outputs:
         height_width_pairs = [(height1, width1), ..., (heightN, widthN)]
     """
-    return round(scale_min + ((scale_max - scale_min) / (m - 1)) * (k - 1), 4)
+    return scale_min + ((scale_max - scale_min) / (m - 1)) * (k - 1)
 
 def get_height_width_pairs(aspect_ratios, feature_map_index, total_feature_map):
     """Generating height and width pairs for different aspect ratios and feature map shapes.
@@ -222,11 +248,11 @@ def get_height_width_pairs(aspect_ratios, feature_map_index, total_feature_map):
     next_scale = get_scale_for_nth_feature_map(feature_map_index + 1, m=total_feature_map)
     height_width_pairs = []
     for aspect_ratio in aspect_ratios:
-        height = round(current_scale / math.sqrt(aspect_ratio), 4)
-        width = round(current_scale * math.sqrt(aspect_ratio), 4)
+        height = current_scale / math.sqrt(aspect_ratio)
+        width = current_scale * math.sqrt(aspect_ratio)
         height_width_pairs.append((height, width))
     # 1 extra pair for ratio 1
-    height = width = round(math.sqrt(current_scale * next_scale), 4)
+    height = width = math.sqrt(current_scale * next_scale)
     height_width_pairs.append((height, width))
     return height_width_pairs
 
@@ -266,7 +292,7 @@ def generate_prior_boxes(feature_map_shapes, aspect_ratios):
     for i, feature_map_shape in enumerate(feature_map_shapes):
         prior_box_count = len(aspect_ratios[i]) + 1
         height_width_pairs = get_height_width_pairs(aspect_ratios[i], i+1, len(feature_map_shapes))
-        base_prior_boxes = generate_base_prior_boxes(1 / feature_map_shape, height_width_pairs)
+        base_prior_boxes = generate_base_prior_boxes(1. / feature_map_shape, height_width_pairs)
         #
         grid_coords = np.arange(0, feature_map_shape)
         #

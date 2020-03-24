@@ -7,8 +7,7 @@ args = helpers.handle_args()
 if args.handle_gpu:
     helpers.handle_gpu_compatibility()
 
-train_batch_size = 8
-val_batch_size = 8
+batch_size = 8
 epochs = 50
 load_weights = False
 ssd_type = "ssd300"
@@ -18,21 +17,22 @@ VOC_train_data, VOC_info = helpers.get_VOC_data("train+validation")
 VOC_val_data, _ = helpers.get_VOC_data("test")
 VOC_train_total_items = helpers.get_total_item_size(VOC_info, "train+validation")
 VOC_val_total_items = helpers.get_total_item_size(VOC_info, "test")
+step_size_train = VOC_train_total_items // batch_size
+step_size_val = VOC_val_total_items // batch_size
 labels = helpers.get_labels(VOC_info)
 # We add 1 class for background
 hyper_params["total_labels"] = len(labels) + 1
 img_size = helpers.SSD[ssd_type]["img_size"]
 
-VOC_train_data = VOC_train_data.map(lambda x : helpers.preprocessing(x, img_size, img_size))
-VOC_train_data = VOC_train_data.map(lambda x,y,z : augmentation.apply(x,y,z))
+VOC_train_data = VOC_train_data.map(lambda x : helpers.preprocessing(x, img_size, img_size, augmentation.apply))
 VOC_val_data = VOC_val_data.map(lambda x : helpers.preprocessing(x, img_size, img_size))
 
 padded_shapes, padding_values = helpers.get_padded_batch_params()
-VOC_train_data = VOC_train_data.padded_batch(train_batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
-VOC_val_data = VOC_val_data.padded_batch(val_batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
+VOC_train_data = VOC_train_data.shuffle(batch_size*4).padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
+VOC_val_data = VOC_val_data.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
 #
 ssd_model = ssd.get_model(hyper_params)
-ssd_model.compile(optimizer=tf.optimizers.SGD(learning_rate=1e-3, momentum=0.9),
+ssd_model.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
                   loss=[None] * len(ssd_model.output))
 #
 ssd_model_path = helpers.get_model_path(ssd_type)
@@ -46,8 +46,6 @@ ssd_val_feed = ssd.generator(VOC_val_data, prior_boxes, hyper_params)
 
 custom_callback = helpers.CustomCallback(ssd_model_path, monitor="val_loss", patience=5)
 
-step_size_train = VOC_train_total_items // train_batch_size
-step_size_val = VOC_val_total_items // val_batch_size
 ssd_model.fit(ssd_train_feed,
               steps_per_epoch=step_size_train,
               validation_data=ssd_val_feed,

@@ -19,16 +19,16 @@ def apply(img, gt_boxes, gt_labels):
         img, gt_boxes = geometric_method(img, gt_boxes)
     return img, gt_boxes, gt_labels
 
-def random_brightness(img, max_delta=0.25):
+def random_brightness(img, max_delta=0.12):
     return tf.image.random_brightness(img, max_delta)
 
-def random_contrast(img, lower=0.1, upper=1.5):
+def random_contrast(img, lower=0.5, upper=1.5):
     return tf.image.random_contrast(img, lower, upper)
 
-def random_hue(img, max_delta=0.25):
+def random_hue(img, max_delta=0.08):
     return tf.image.random_hue(img, max_delta)
 
-def random_saturation(img, lower=0.1, upper=1.5):
+def random_saturation(img, lower=0.5, upper=1.5):
     return tf.image.random_saturation(img, lower, upper)
 
 def random_flip_horizontally(img, gt_boxes):

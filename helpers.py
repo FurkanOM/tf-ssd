@@ -131,7 +131,7 @@ def get_labels(info):
     """
     return info.features["labels"].names
 
-def preprocessing(image_data, final_height, final_width):
+def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
     """Image resizing operation handled before batch operations.
     inputs:
         image_data = tensorflow dataset image_data
@@ -147,6 +147,8 @@ def preprocessing(image_data, final_height, final_width):
     img = resize_image(img, final_height, final_width)
     gt_boxes = image_data["objects"]["bbox"]
     gt_labels = image_data["objects"]["label"]
+    if augmentation_fn:
+        img, gt_boxes, gt_labels = augmentation_fn(img, gt_boxes, gt_labels)
     return img, gt_boxes, gt_labels
 
 def non_max_suppression(pred_bboxes, pred_labels, **kwargs):
