@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from tensorflow.keras.layers import Layer, Input, Conv2D, MaxPool2D, Activation
 from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.regularizers import l2
 import helpers
 import numpy as np
 import math
@@ -142,58 +143,60 @@ def get_model(hyper_params, mode="training"):
         ssd_model = tf.keras.model
     """
     scale_factor = 20.0
+    reg_factor = 2e-4
     total_labels = hyper_params["total_labels"]
     # +1 for ratio 1
     len_aspect_ratios = [len(x) + 1 for x in hyper_params["aspect_ratios"]]
     #
     base_model = VGG16(include_top=False)
     base_model = Sequential(base_model.layers[:10])
+    #
     pool3 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool3")(base_model.output)
     # conv4 block
-    conv4_1 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv4_1")(pool3)
-    conv4_2 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv4_2")(conv4_1)
-    conv4_3 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv4_3")(conv4_2)
+    conv4_1 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv4_1")(pool3)
+    conv4_2 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv4_2")(conv4_1)
+    conv4_3 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv4_3")(conv4_2)
     pool4 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool4")(conv4_3)
     # conv5 block
-    conv5_1 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv5_1")(pool4)
-    conv5_2 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv5_2")(conv5_1)
-    conv5_3 = Conv2D(512, (3, 3), padding="same", activation="relu", name="conv5_3")(conv5_2)
+    conv5_1 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv5_1")(pool4)
+    conv5_2 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv5_2")(conv5_1)
+    conv5_3 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv5_3")(conv5_2)
     pool5 = MaxPool2D((3, 3), strides=(1, 1), padding="same", name="pool5")(conv5_3)
     # conv6 and conv7 converted from fc6 and fc7 and remove dropouts
     # These layers coming from modified vgg16 model
     # https://gist.github.com/weiliu89/2ed6e13bfd5b57cf81d6
-    conv6 = Conv2D(1024, (3, 3), dilation_rate=6, padding="same", activation="relu", name="conv6")(pool5)
-    conv7 = Conv2D(1024, (1, 1), strides=(1, 1), padding="same", activation="relu", name="conv7")(conv6)
+    conv6 = Conv2D(1024, (3, 3), dilation_rate=6, padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv6")(pool5)
+    conv7 = Conv2D(1024, (1, 1), strides=(1, 1), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv7")(conv6)
     ############################ Extra Feature Layers Start ############################
     # conv8 block <=> conv6 block in paper caffe implementation
-    conv8_1 = Conv2D(256, (1, 1), strides=(1, 1), padding="valid", activation="relu", name="conv8_1")(conv7)
-    conv8_2 = Conv2D(512, (3, 3), strides=(2, 2), padding="same", activation="relu", name="conv8_2")(conv8_1)
+    conv8_1 = Conv2D(256, (1, 1), strides=(1, 1), padding="valid", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv8_1")(conv7)
+    conv8_2 = Conv2D(512, (3, 3), strides=(2, 2), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv8_2")(conv8_1)
     # conv9 block <=> conv7 block in paper caffe implementation
-    conv9_1 = Conv2D(128, (1, 1), strides=(1, 1), padding="valid", activation="relu", name="conv9_1")(conv8_2)
-    conv9_2 = Conv2D(256, (3, 3), strides=(2, 2), padding="same", activation="relu", name="conv9_2")(conv9_1)
+    conv9_1 = Conv2D(128, (1, 1), strides=(1, 1), padding="valid", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv9_1")(conv8_2)
+    conv9_2 = Conv2D(256, (3, 3), strides=(2, 2), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv9_2")(conv9_1)
     # conv10 block <=> conv8 block in paper caffe implementation
-    conv10_1 = Conv2D(128, (1, 1), strides=(1, 1), padding="valid", activation="relu", name="conv10_1")(conv9_2)
-    conv10_2 = Conv2D(256, (3, 3), strides=(1, 1), padding="valid", activation="relu", name="conv10_2")(conv10_1)
+    conv10_1 = Conv2D(128, (1, 1), strides=(1, 1), padding="valid", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv10_1")(conv9_2)
+    conv10_2 = Conv2D(256, (3, 3), strides=(1, 1), padding="valid", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv10_2")(conv10_1)
     # conv11 block <=> conv9 block in paper caffe implementation
-    conv11_1 = Conv2D(128, (1, 1), strides=(1, 1), padding="valid", activation="relu", name="conv11_1")(conv10_2)
-    conv11_2 = Conv2D(256, (3, 3), strides=(1, 1), padding="valid", activation="relu", name="conv11_2")(conv11_1)
+    conv11_1 = Conv2D(128, (1, 1), strides=(1, 1), padding="valid", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv11_1")(conv10_2)
+    conv11_2 = Conv2D(256, (3, 3), strides=(1, 1), padding="valid", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv11_2")(conv11_1)
     ############################ Extra Feature Layers End ############################
     # l2 normalization for each location in the feature map
     conv4_3_norm = L2Normalization(scale_factor)(conv4_3)
     #
-    conv4_3_labels = Conv2D(len_aspect_ratios[0] * total_labels, (3, 3), padding="same", name="conv4_3_label_output")(conv4_3_norm)
-    conv7_labels = Conv2D(len_aspect_ratios[1] * total_labels, (3, 3), padding="same", name="conv7_label_output")(conv7)
-    conv8_2_labels = Conv2D(len_aspect_ratios[2] * total_labels, (3, 3), padding="same", name="conv8_2_label_output")(conv8_2)
-    conv9_2_labels = Conv2D(len_aspect_ratios[3] * total_labels, (3, 3), padding="same", name="conv9_2_label_output")(conv9_2)
-    conv10_2_labels = Conv2D(len_aspect_ratios[4] * total_labels, (3, 3), padding="same", name="conv10_2_label_output")(conv10_2)
-    conv11_2_labels = Conv2D(len_aspect_ratios[5] * total_labels, (3, 3), padding="same", name="conv11_2_label_output")(conv11_2)
+    conv4_3_labels = Conv2D(len_aspect_ratios[0] * total_labels, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv4_3_label_output")(conv4_3_norm)
+    conv7_labels = Conv2D(len_aspect_ratios[1] * total_labels, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv7_label_output")(conv7)
+    conv8_2_labels = Conv2D(len_aspect_ratios[2] * total_labels, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv8_2_label_output")(conv8_2)
+    conv9_2_labels = Conv2D(len_aspect_ratios[3] * total_labels, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv9_2_label_output")(conv9_2)
+    conv10_2_labels = Conv2D(len_aspect_ratios[4] * total_labels, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv10_2_label_output")(conv10_2)
+    conv11_2_labels = Conv2D(len_aspect_ratios[5] * total_labels, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv11_2_label_output")(conv11_2)
     #
-    conv4_3_boxes = Conv2D(len_aspect_ratios[0] * 4, (3, 3), padding="same", name="conv4_3_boxes_output")(conv4_3_norm)
-    conv7_boxes = Conv2D(len_aspect_ratios[1] * 4, (3, 3), padding="same", name="conv7_boxes_output")(conv7)
-    conv8_2_boxes = Conv2D(len_aspect_ratios[2] * 4, (3, 3), padding="same", name="conv8_2_boxes_output")(conv8_2)
-    conv9_2_boxes = Conv2D(len_aspect_ratios[3] * 4, (3, 3), padding="same", name="conv9_2_boxes_output")(conv9_2)
-    conv10_2_boxes = Conv2D(len_aspect_ratios[4] * 4, (3, 3), padding="same", name="conv10_2_boxes_output")(conv10_2)
-    conv11_2_boxes = Conv2D(len_aspect_ratios[5] * 4, (3, 3), padding="same", name="conv11_2_boxes_output")(conv11_2)
+    conv4_3_boxes = Conv2D(len_aspect_ratios[0] * 4, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv4_3_boxes_output")(conv4_3_norm)
+    conv7_boxes = Conv2D(len_aspect_ratios[1] * 4, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv7_boxes_output")(conv7)
+    conv8_2_boxes = Conv2D(len_aspect_ratios[2] * 4, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv8_2_boxes_output")(conv8_2)
+    conv9_2_boxes = Conv2D(len_aspect_ratios[3] * 4, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv9_2_boxes_output")(conv9_2)
+    conv10_2_boxes = Conv2D(len_aspect_ratios[4] * 4, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv10_2_boxes_output")(conv10_2)
+    conv11_2_boxes = Conv2D(len_aspect_ratios[5] * 4, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv11_2_boxes_output")(conv11_2)
     #
     pred_labels = HeadWrapper(total_labels, name="labels_head")([conv4_3_labels, conv7_labels, conv8_2_labels,
                                                                    conv9_2_labels, conv10_2_labels, conv11_2_labels])
