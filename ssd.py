@@ -7,6 +7,64 @@ import helpers
 import numpy as np
 import math
 
+def loc_loss(actual_bbox_deltas, pred_bbox_deltas):
+    """Calculating SSD localization loss value for only positive samples.
+    inputs:
+        actual_bbox_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
+        pred_bbox_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
+
+    outputs:
+        loc_loss = localization / regression / bounding box loss value
+    """
+    pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, 0), axis=2)
+    pos_bbox_indices = tf.where(pos_cond)
+    pos_bbox_count = tf.math.count_nonzero(pos_cond, axis=1)
+    #
+    total_pos_bboxes = tf.cast(tf.reduce_sum(pos_bbox_count), tf.float32)
+    # Localization / Bbox loss calculation for pos bounding boxes
+    y_true_bbox = tf.gather_nd(actual_bbox_deltas, pos_bbox_indices)
+    y_pred_bbox = tf.gather_nd(pred_bbox_deltas, pos_bbox_indices)
+    loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.SUM)
+    loc_loss = loc_loss_fn(y_true_bbox, y_pred_bbox)
+    #
+    loc_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), loc_loss / total_pos_bboxes, 0.0)
+    return loc_loss
+
+def conf_loss(actual_labels, pred_labels):
+    """Calculating SSD confidence loss value by performing hard negative mining as mentioned in the paper.
+    inputs:
+        actual_labels = (batch_size, total_prior_boxes, total_labels)
+        pred_labels = (batch_size, total_prior_boxes, total_labels)
+
+    outputs:
+        conf_loss = confidence / class / label loss value
+    """
+    # Confidence / Label loss calculation for all labels
+    conf_loss_fn = tf.losses.CategoricalCrossentropy(reduction=tf.losses.Reduction.NONE)
+    conf_loss_for_all = conf_loss_fn(actual_labels, pred_labels)
+    #
+    pos_cond = tf.not_equal(actual_labels[..., -1], 1)
+    pos_bbox_indices = tf.where(pos_cond)
+    pos_bbox_count = tf.math.count_nonzero(pos_cond, axis=1)
+    # Hard negative mining
+    neg_bbox_indices_count = tf.cast(pos_bbox_count * 3, tf.int32)
+    # Remove positive index values from negative calculations
+    masked_loss = tf.where(pos_cond, float("-inf"), conf_loss_for_all)
+    # Sort loss values in descending order
+    sorted_loss = tf.cast(tf.argsort(masked_loss, direction="DESCENDING"), tf.int64)
+    batch_size, total_items = tf.shape(sorted_loss)[0], tf.shape(sorted_loss)[1]
+    sorted_loss_indices = tf.tile([tf.range(total_items)], (batch_size, 1))
+    neg_cond = sorted_loss_indices < tf.expand_dims(neg_bbox_indices_count, 1)
+    neg_bbox_indices = tf.stack([tf.where(neg_cond)[:,0], sorted_loss[neg_cond]], 1)
+    #
+    total_pos_bboxes = tf.cast(tf.reduce_sum(pos_bbox_count), tf.float32)
+    # Confidence / Label loss calculation for pos + neg bounding boxes
+    selected_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
+    conf_loss = tf.reduce_sum(tf.gather_nd(conf_loss_for_all, selected_indices))
+    #
+    conf_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), conf_loss / total_pos_bboxes, 0.0)
+    return conf_loss
+
 class L2Normalization(Layer):
     """Normalizing different scale features for fusion.
     paper: https://arxiv.org/abs/1506.04579
@@ -32,67 +90,6 @@ class L2Normalization(Layer):
 
     def call(self, inputs):
         return tf.nn.l2_normalize(inputs, axis=-1) * self.scale
-
-class CustomLoss(Layer):
-    """Calculating SSD loss values by performing hard negative mining as mentioned in the paper.
-    inputs:
-        actual_bbox_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
-        actual_labels = (batch_size, total_prior_boxes, total_labels)
-        pred_bbox_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
-        pred_labels = (batch_size, total_prior_boxes, total_labels)
-
-    outputs:
-        loc_loss = localization / regression / bounding box loss value
-        conf_loss = confidence / class / label loss value
-    """
-
-    def __init__(self, neg_pos_ratio, loc_loss_alpha, **kwargs):
-        super(CustomLoss, self).__init__(**kwargs)
-        self.neg_pos_ratio = neg_pos_ratio
-        self.loc_loss_alpha = loc_loss_alpha
-
-    def get_config(self):
-        config = super(CustomLoss, self).get_config()
-        config.update({"neg_pos_ratio": self.neg_pos_ratio, "loc_loss_alpha": self.loc_loss_alpha})
-        return config
-
-    def call(self, inputs):
-        actual_bbox_deltas = tf.stop_gradient(inputs[0])
-        actual_labels = tf.stop_gradient(inputs[1])
-        pred_bbox_deltas = inputs[2]
-        pred_labels = inputs[3]
-        #
-        # Confidence / Label loss calculation for all labels
-        conf_loss_fn = tf.losses.CategoricalCrossentropy(reduction=tf.losses.Reduction.NONE)
-        conf_loss_for_all = conf_loss_fn(actual_labels, pred_labels)
-        #
-        pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, 0), axis=2)
-        pos_bbox_indices = tf.where(pos_cond)
-        pos_bbox_count = tf.math.count_nonzero(pos_cond, axis=1)
-        # Hard negative mining
-        neg_bbox_indices_count = tf.cast(pos_bbox_count * int(self.neg_pos_ratio), tf.int32)
-        # Remove positive index values from negative calculations
-        masked_loss = tf.where(pos_cond, float("-inf"), conf_loss_for_all)
-        # Sort loss values in descending order
-        sorted_loss = tf.cast(tf.argsort(masked_loss, direction="DESCENDING"), tf.int64)
-        batch_size, total_items = tf.shape(sorted_loss)[0], tf.shape(sorted_loss)[1]
-        sorted_loss_indices = tf.tile([tf.range(total_items)], (batch_size, 1))
-        neg_cond = sorted_loss_indices < tf.expand_dims(neg_bbox_indices_count, 1)
-        neg_bbox_indices = tf.stack([tf.where(neg_cond)[:,0], sorted_loss[neg_cond]], 1)
-        #
-        total_pos_bboxes = tf.cast(tf.reduce_sum(pos_bbox_count), tf.float32)
-        # Localization / Bbox loss calculation for pos bounding boxes
-        y_true_bbox = tf.gather_nd(actual_bbox_deltas, pos_bbox_indices)
-        y_pred_bbox = tf.gather_nd(pred_bbox_deltas, pos_bbox_indices)
-        loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.SUM)
-        loc_loss = loc_loss_fn(y_true_bbox, y_pred_bbox) * self.loc_loss_alpha
-        # Confidence / Label loss calculation for pos + neg bounding boxes
-        selected_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
-        conf_loss = tf.reduce_sum(tf.gather_nd(conf_loss_for_all, selected_indices))
-        #
-        loc_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), loc_loss / total_pos_bboxes, 0.0)
-        conf_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), conf_loss / total_pos_bboxes, 0.0)
-        return loc_loss, conf_loss
 
 class HeadWrapper(Layer):
     """Merging all feature maps for detections.
@@ -133,11 +130,10 @@ class HeadWrapper(Layer):
         #
         return tf.concat(outputs, axis=1)
 
-def get_model(hyper_params, mode="training"):
+def get_model(hyper_params):
     """Generating ssd model for hyper params.
     inputs:
         hyper_params = dictionary
-        mode = "training" or "inference"
 
     outputs:
         ssd_model = tf.keras.model
@@ -148,10 +144,20 @@ def get_model(hyper_params, mode="training"):
     # +1 for ratio 1
     len_aspect_ratios = [len(x) + 1 for x in hyper_params["aspect_ratios"]]
     #
-    base_model = VGG16(include_top=False)
-    base_model = Sequential(base_model.layers[:10])
-    #
-    pool3 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool3")(base_model.output)
+    input = Input(shape=(None, None, 3), name="input")
+    # conv1 block
+    conv1_1 = Conv2D(64, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv1_1")(input)
+    conv1_2 = Conv2D(64, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv1_2")(conv1_1)
+    pool1 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool1")(conv1_2)
+    # conv2 block
+    conv2_1 = Conv2D(128, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv2_1")(pool1)
+    conv2_2 = Conv2D(128, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv2_2")(conv2_1)
+    pool2 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool2")(conv2_2)
+    # conv3 block
+    conv3_1 = Conv2D(256, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv3_1")(pool2)
+    conv3_2 = Conv2D(256, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv3_2")(conv3_1)
+    conv3_3 = Conv2D(256, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv3_3")(conv3_2)
+    pool3 = MaxPool2D((2, 2), strides=(2, 2), padding="same", name="pool3")(conv3_3)
     # conv4 block
     conv4_1 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv4_1")(pool3)
     conv4_2 = Conv2D(512, (3, 3), padding="same", activation="relu", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv4_2")(conv4_1)
@@ -199,31 +205,21 @@ def get_model(hyper_params, mode="training"):
     conv11_2_boxes = Conv2D(len_aspect_ratios[5] * 4, (3, 3), padding="same", kernel_initializer="glorot_normal", kernel_regularizer=l2(reg_factor), name="conv11_2_boxes_output")(conv11_2)
     #
     pred_labels = HeadWrapper(total_labels, name="labels_head")([conv4_3_labels, conv7_labels, conv8_2_labels,
-                                                                   conv9_2_labels, conv10_2_labels, conv11_2_labels])
-    pred_labels = Activation("softmax", name="softmax_activation")(pred_labels)
+                                                                 conv9_2_labels, conv10_2_labels, conv11_2_labels])
+    pred_labels = Activation("softmax", name="conf")(pred_labels)
     #
-    pred_bbox_deltas = HeadWrapper(4, name="boxes_head")([conv4_3_boxes, conv7_boxes, conv8_2_boxes,
-                                                     conv9_2_boxes, conv10_2_boxes, conv11_2_boxes])
+    pred_bbox_deltas = HeadWrapper(4, name="loc")([conv4_3_boxes, conv7_boxes, conv8_2_boxes,
+                                                   conv9_2_boxes, conv10_2_boxes, conv11_2_boxes])
     #
-    if mode == "training":
-        actual_bbox_deltas = Input(shape=(None, 4), name="input_bbox_deltas", dtype=tf.float32)
-        actual_labels = Input(shape=(None, hyper_params["total_labels"]), name="input_labels", dtype=tf.float32)
-        #
-        loc_loss, conf_loss = CustomLoss(hyper_params["neg_pos_ratio"], hyper_params["loc_loss_alpha"], name="custom_loss_calculation")(
-                                            [actual_bbox_deltas, actual_labels, pred_bbox_deltas, pred_labels])
-        #
-        ssd_model = Model(inputs=[base_model.input, actual_bbox_deltas, actual_labels],
-                          outputs=[pred_bbox_deltas, pred_labels, loc_loss, conf_loss])
-        #
-        ssd_model.add_loss(loc_loss)
-        ssd_model.add_metric(loc_loss, name="loc_loss", aggregation="mean")
-        ssd_model.add_loss(conf_loss)
-        ssd_model.add_metric(conf_loss, name="conf_loss", aggregation="mean")
-    else:
-        ssd_model = Model(inputs=base_model.input, outputs=[pred_bbox_deltas, pred_labels])
-    dummy_initializer = get_dummy_initializer(hyper_params, mode)
-    ssd_model(dummy_initializer)
-    return ssd_model
+    return Model(inputs=input, outputs=[pred_bbox_deltas, pred_labels])
+
+def init_model(model):
+    """Initializing model with dummy data for load weights with optimizer state and also graph construction.
+    inputs:
+        model = tf.keras.model
+
+    """
+    model(tf.random.uniform((1, 512, 512, 3)))
 
 def get_scale_for_nth_feature_map(k, m=6, scale_min=0.2, scale_max=0.9):
     """Calculating scale value for nth feature map using the given method in the paper.
@@ -327,10 +323,10 @@ def generator(dataset, prior_boxes, hyper_params):
             img, gt_boxes, gt_labels = image_data
             input_img = preprocess_input(img)
             input_img = tf.image.convert_image_dtype(input_img, tf.float32)
-            bbox_deltas, bbox_labels = calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
-            yield (input_img, bbox_deltas, bbox_labels), ()
+            actual_bbox_deltas, actual_labels = calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
+            yield input_img, (actual_bbox_deltas, actual_labels)
 
-def calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
+def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     """Calculate ssd actual output values.
     Batch operations supported.
     inputs:
@@ -363,14 +359,3 @@ def calculate_ssd_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
     bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, pos_bbox_indices, pos_gt_labels_map)
     #
     return bbox_deltas, bbox_labels
-
-def get_dummy_initializer(hyper_params, mode="training"):
-    x2_img_size = 512
-    img = tf.random.uniform((1, x2_img_size, x2_img_size, 3))
-    if mode != "training":
-        return img
-    x2_boxes = 24656
-    total_labels = hyper_params["total_labels"]
-    bbox_deltas = tf.random.uniform((1, x2_boxes, 4)),
-    bbox_labels = tf.random.uniform((1, x2_boxes, total_labels), dtype=tf.int32, maxval=total_labels)
-    return img, bbox_deltas, bbox_labels

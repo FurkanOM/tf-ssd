@@ -5,6 +5,8 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 import numpy as np
+import math
+from datetime import datetime
 
 SSD = {
     "ssd300": {
@@ -50,8 +52,19 @@ class CustomCallback(tf.keras.callbacks.Callback):
             print("Training early stopped at {0} epoch because loss value did not decrease last {1} epochs".format(self.last_epoch+1, self.patience))
 ###############################################################
 
+def get_log_path(model_type):
+    """Generating log path from model_type value for tensorboard.
+    inputs:
+        model_type = "ssd300"
+
+    outputs:
+        log_path = tensorboard log path, for example: "logs/ssd300/{date}"
+    """
+    return "logs/{}/{}".format(model_type, datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+
 def get_model_path(model_type):
-    """Generating model path from stride value for save/load model weights.
+    """Generating model path from model_type value for save/load model weights.
     inputs:
         model_type = "ssd300"
 
@@ -104,8 +117,20 @@ def get_VOC_data(split, data_dir="~/tensorflow_datasets"):
         info = tensorflow dataset info
     """
     assert split in ["train", "train+validation", "validation", "test"]
-    dataset, info = tfds.load("voc", split=split, data_dir=data_dir, with_info=True)
+    # voc/2007 and voc/2012
+    dataset, info = tfds.load("voc/2007", split=split, data_dir=data_dir, with_info=True)
     return dataset, info
+
+def get_step_size(total_items, batch_size):
+    """Get step size for given total item size and batch size.
+    inputs:
+        total_items = number of total items
+        batch_size = number of batch size during training or validation
+
+    outputs:
+        step_size = number of step size for model training
+    """
+    return math.ceil(total_items / batch_size)
 
 def get_total_item_size(info, split):
     """Get total item size for given split.
