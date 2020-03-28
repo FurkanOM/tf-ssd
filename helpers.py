@@ -38,7 +38,7 @@ class CustomCallback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs=None):
         self.last_epoch = epoch
         current = logs.get(self.monitor)
-        if np.less(current, self.best_loss):
+        if tf.less(current, self.best_loss):
             self.best_loss = current
             self.patience_counter = 0
             self.model.save_weights(self.model_path)
