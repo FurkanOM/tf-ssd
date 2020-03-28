@@ -103,12 +103,13 @@ def get_padded_batch_params():
         padding_values = padding values with dtypes for (images, ground truth boxes, labels)
     """
     padded_shapes = ([None, None, None], [None, None], [None,])
-    padding_values = (tf.constant(0, tf.uint8), tf.constant(0, tf.float32), tf.constant(-1, tf.int64))
+    padding_values = (tf.constant(0, tf.uint8), tf.constant(0, tf.float32), tf.constant(-1, tf.int32))
     return padded_shapes, padding_values
 
-def get_VOC_data(split, data_dir="~/tensorflow_datasets"):
+def get_dataset(name, split, data_dir="~/tensorflow_datasets"):
     """Get tensorflow dataset split and info.
     inputs:
+        name = name of the dataset, voc/2007, voc/2012, etc.
         split = data split string, should be one of ["train", "validation", "test"]
         data_dir = read/write path for tensorflow datasets
 
@@ -117,8 +118,7 @@ def get_VOC_data(split, data_dir="~/tensorflow_datasets"):
         info = tensorflow dataset info
     """
     assert split in ["train", "train+validation", "validation", "test"]
-    # voc/2007 and voc/2012
-    dataset, info = tfds.load("voc/2007", split=split, data_dir=data_dir, with_info=True)
+    dataset, info = tfds.load(name, split=split, data_dir=data_dir, with_info=True)
     return dataset, info
 
 def get_step_size(total_items, batch_size):
@@ -170,7 +170,7 @@ def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
     """
     img = image_data["image"]
     gt_boxes = image_data["objects"]["bbox"]
-    gt_labels = image_data["objects"]["label"]
+    gt_labels = tf.cast(image_data["objects"]["label"], tf.int32)
     if augmentation_fn:
         img, gt_boxes, gt_labels = augmentation_fn(img, gt_boxes, gt_labels)
     img = resize_image(img, final_height, final_width)

@@ -353,9 +353,8 @@ def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     bbox_deltas = helpers.get_deltas_from_bboxes(prior_boxes, expanded_gt_boxes) / variances
     #
     pos_gt_labels_map = tf.gather_nd(gt_labels, gt_box_indices)
-    pos_gt_labels_map = tf.one_hot(pos_gt_labels_map, total_labels)
     bbox_labels = tf.fill((batch_size, total_prior_boxes), total_labels-1)
-    bbox_labels = tf.one_hot(bbox_labels, total_labels)
     bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, pos_bbox_indices, pos_gt_labels_map)
+    bbox_labels = tf.one_hot(bbox_labels, total_labels)
     #
     return bbox_deltas, bbox_labels

@@ -13,8 +13,8 @@ load_weights = False
 ssd_type = "ssd300"
 hyper_params = helpers.get_hyper_params(ssd_type)
 
-VOC_train_data, VOC_info = helpers.get_VOC_data("train+validation")
-VOC_val_data, _ = helpers.get_VOC_data("test")
+VOC_train_data, VOC_info = helpers.get_dataset("voc/2007", "train+validation")
+VOC_val_data, _ = helpers.get_dataset("voc/2007", "test")
 VOC_train_total_items = helpers.get_total_item_size(VOC_info, "train+validation")
 VOC_val_total_items = helpers.get_total_item_size(VOC_info, "test")
 step_size_train = helpers.get_step_size(VOC_train_total_items, batch_size)
