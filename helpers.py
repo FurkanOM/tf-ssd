@@ -169,11 +169,11 @@ def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
         gt_labels = (gt_box_size)
     """
     img = image_data["image"]
-    img = resize_image(img, final_height, final_width)
     gt_boxes = image_data["objects"]["bbox"]
     gt_labels = image_data["objects"]["label"]
     if augmentation_fn:
         img, gt_boxes, gt_labels = augmentation_fn(img, gt_boxes, gt_labels)
+    img = resize_image(img, final_height, final_width)
     return img, gt_boxes, gt_labels
 
 def non_max_suppression(pred_bboxes, pred_labels, **kwargs):
@@ -254,29 +254,37 @@ def get_deltas_from_bboxes(bboxes, gt_boxes):
     #
     return tf.stack([delta_y, delta_x, delta_h, delta_w], axis=-1)
 
-def generate_iou_map(bboxes, gt_boxes):
-    """Calculating iou values for each ground truth boxes in batched manner.
+def generate_iou_map(bboxes, gt_boxes, transpose_perm=[0, 2, 1]):
+    """Calculating intersection over union values for each ground truth boxes in a dynamic manner.
+    It is supported from 1d to 3d dimensions for bounding boxes.
+    Even if bboxes have different rank from gt_boxes it should be work.
     inputs:
-        bboxes = (total_bboxes, [y1, x1, y2, x2])
-        gt_boxes = (batch_size, total_gt_boxes, [y1, x1, y2, x2])
+        bboxes = (dynamic_dimension, [y1, x1, y2, x2])
+        gt_boxes = (dynamic_dimension, [y1, x1, y2, x2])
+        transpose_perm = (transpose_perm_order)
+            for 3d gt_boxes => [0, 2, 1]
 
     outputs:
-        iou_map = (batch_size, total_bboxes, total_gt_boxes)
+        iou_map = (dynamic_dimension, total_gt_boxes)
+            same rank with the gt_boxes
     """
+    gt_rank = tf.rank(gt_boxes)
+    gt_expand_axis = gt_rank - 2
+    #
     bbox_y1, bbox_x1, bbox_y2, bbox_x2 = tf.split(bboxes, 4, axis=-1)
     gt_y1, gt_x1, gt_y2, gt_x2 = tf.split(gt_boxes, 4, axis=-1)
     # Calculate bbox and ground truth boxes areas
     gt_area = tf.squeeze((gt_y2 - gt_y1) * (gt_x2 - gt_x1), axis=-1)
     bbox_area = tf.squeeze((bbox_y2 - bbox_y1) * (bbox_x2 - bbox_x1), axis=-1)
     #
-    x_top = tf.maximum(bbox_x1, tf.transpose(gt_x1, [0, 2, 1]))
-    y_top = tf.maximum(bbox_y1, tf.transpose(gt_y1, [0, 2, 1]))
-    x_bottom = tf.minimum(bbox_x2, tf.transpose(gt_x2, [0, 2, 1]))
-    y_bottom = tf.minimum(bbox_y2, tf.transpose(gt_y2, [0, 2, 1]))
+    x_top = tf.maximum(bbox_x1, tf.transpose(gt_x1, transpose_perm))
+    y_top = tf.maximum(bbox_y1, tf.transpose(gt_y1, transpose_perm))
+    x_bottom = tf.minimum(bbox_x2, tf.transpose(gt_x2, transpose_perm))
+    y_bottom = tf.minimum(bbox_y2, tf.transpose(gt_y2, transpose_perm))
     ### Calculate intersection area
     intersection_area = tf.maximum(x_bottom - x_top, 0) * tf.maximum(y_bottom - y_top, 0)
     ### Calculate union area
-    union_area = (tf.expand_dims(bbox_area, -1) + tf.expand_dims(gt_area, 1) - intersection_area)
+    union_area = (tf.expand_dims(bbox_area, -1) + tf.expand_dims(gt_area, gt_expand_axis) - intersection_area)
     # Intersection over Union
     return intersection_area / union_area
 
@@ -333,12 +341,11 @@ def normalize_bboxes(bboxes, height, width):
         normalized_bboxes = (batch_size, total_bboxes, [y1, x1, y2, x2])
             in normalized form [0, 1]
     """
-    new_bboxes = np.zeros(bboxes.shape, dtype=np.float32)
-    new_bboxes[:, 0] = bboxes[:, 0] / height
-    new_bboxes[:, 1] = bboxes[:, 1] / width
-    new_bboxes[:, 2] = bboxes[:, 2] / height
-    new_bboxes[:, 3] = bboxes[:, 3] / width
-    return new_bboxes
+    y1 = bboxes[..., 0] / height
+    x1 = bboxes[..., 1] / width
+    y2 = bboxes[..., 2] / height
+    x2 = bboxes[..., 3] / width
+    return tf.stack([y1, x1, y2, x2], axis=-1)
 
 def denormalize_bboxes(bboxes, height, width):
     """Denormalizing bounding boxes.
@@ -351,12 +358,11 @@ def denormalize_bboxes(bboxes, height, width):
     outputs:
         denormalized_bboxes = (batch_size, total_bboxes, [y1, x1, y2, x2])
     """
-    new_bboxes = np.zeros(bboxes.shape, dtype=np.float32)
-    new_bboxes[:, 0] = np.round(bboxes[:, 0] * height)
-    new_bboxes[:, 1] = np.round(bboxes[:, 1] * width)
-    new_bboxes[:, 2] = np.round(bboxes[:, 2] * height)
-    new_bboxes[:, 3] = np.round(bboxes[:, 3] * width)
-    return new_bboxes
+    y1 = bboxes[..., 0] * height
+    x1 = bboxes[..., 1] * width
+    y2 = bboxes[..., 2] * height
+    x2 = bboxes[..., 3] * width
+    return tf.round(tf.stack([y1, x1, y2, x2], axis=-1))
 
 def resize_image(img, final_height, final_width):
     """Resize image to given height and width values.

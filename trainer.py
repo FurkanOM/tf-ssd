@@ -33,7 +33,7 @@ VOC_val_data = VOC_val_data.padded_batch(batch_size, padded_shapes=padded_shapes
 #
 ssd_model = ssd.get_model(hyper_params)
 ssd_model.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                  loss=[ssd.loc_loss, ssd.conf_loss])
+                  loss=[ssd.loc_loss_fn, ssd.conf_loss_fn])
 ssd.init_model(ssd_model)
 #
 ssd_model_path = helpers.get_model_path(ssd_type)
@@ -45,7 +45,7 @@ prior_boxes = ssd.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper
 ssd_train_feed = ssd.generator(VOC_train_data, prior_boxes, hyper_params)
 ssd_val_feed = ssd.generator(VOC_val_data, prior_boxes, hyper_params)
 
-custom_callback = helpers.CustomCallback(ssd_model_path, monitor="val_loss", patience=10)
+custom_callback = helpers.CustomCallback(ssd_model_path, monitor="val_loss", patience=epochs)
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=ssd_log_path)
 
 ssd_model.fit(ssd_train_feed,

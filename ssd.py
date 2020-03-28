@@ -7,7 +7,7 @@ import helpers
 import numpy as np
 import math
 
-def loc_loss(actual_bbox_deltas, pred_bbox_deltas):
+def loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas):
     """Calculating SSD localization loss value for only positive samples.
     inputs:
         actual_bbox_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
@@ -30,7 +30,7 @@ def loc_loss(actual_bbox_deltas, pred_bbox_deltas):
     loc_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), loc_loss / total_pos_bboxes, 0.0)
     return loc_loss
 
-def conf_loss(actual_labels, pred_labels):
+def conf_loss_fn(actual_labels, pred_labels):
     """Calculating SSD confidence loss value by performing hard negative mining as mentioned in the paper.
     inputs:
         actual_labels = (batch_size, total_prior_boxes, total_labels)
