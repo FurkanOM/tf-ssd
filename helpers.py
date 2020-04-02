@@ -13,9 +13,9 @@ SSD = {
         "img_size": 300,
         "feature_map_shapes": [38, 19, 10, 5, 3, 1],
         "aspect_ratios": [[1., 2., 1./2.],
-                         [1., 2., 3., 1./2., 1./3.],
-                         [1., 2., 3., 1./2., 1./3.],
-                         [1., 2., 3., 1./2., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
                          [1., 2., 1./2.],
                          [1., 2., 1./2.]],
     }
@@ -52,15 +52,16 @@ class CustomCallback(tf.keras.callbacks.Callback):
             print("Training early stopped at {0} epoch because loss value did not decrease last {1} epochs".format(self.last_epoch+1, self.patience))
 ###############################################################
 
-def get_log_path(model_type):
+def get_log_path(model_type, custom_postfix=""):
     """Generating log path from model_type value for tensorboard.
     inputs:
         model_type = "ssd300"
+        custom_postfix = any custom string for log folder name
 
     outputs:
         log_path = tensorboard log path, for example: "logs/ssd300/{date}"
     """
-    return "logs/{}/{}".format(model_type, datetime.now().strftime("%Y%m%d-%H%M%S"))
+    return "logs/{}{}/{}".format(model_type, custom_postfix, datetime.now().strftime("%Y%m%d-%H%M%S"))
 
 
 def get_model_path(model_type):
@@ -86,7 +87,8 @@ def get_hyper_params(ssd_type, **kwargs):
         hyper_params = dictionary
     """
     hyper_params = SSD[ssd_type]
-    hyper_params["iou_threshold"] = 0.5
+    hyper_params["pos_iou_threshold"] = 0.5
+    hyper_params["neg_iou_threshold"] = 0.5
     hyper_params["neg_pos_ratio"] = 3
     hyper_params["loc_loss_alpha"] = 1
     hyper_params["variances"] = [0.1, 0.1, 0.2, 0.2]
@@ -170,7 +172,7 @@ def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
     """
     img = image_data["image"]
     gt_boxes = image_data["objects"]["bbox"]
-    gt_labels = tf.cast(image_data["objects"]["label"], tf.int32)
+    gt_labels = tf.cast(image_data["objects"]["label"], tf.int32) + 1
     if augmentation_fn:
         img, gt_boxes, gt_labels = augmentation_fn(img, gt_boxes, gt_labels)
     img = resize_image(img, final_height, final_width)
@@ -288,16 +290,18 @@ def generate_iou_map(bboxes, gt_boxes, transpose_perm=[0, 2, 1]):
     # Intersection over Union
     return intersection_area / union_area
 
-def get_selected_indices(bboxes, gt_boxes, iou_threshold):
+def get_selected_indices(bboxes, gt_boxes, pos_iou_threshold, neg_iou_threshold):
     """Calculating indices for each bounding box and correspond ground truth box.
     inputs:
         bboxes = (total_bboxes, [y1, x1, y2, x2])
         gt_boxes = (batch_size, total_gt_boxes, [y1, x1, y2, x2])
-        iou_threshold = Intersection over Union threshold value for positive prior boxes
+        pos_iou_threshold = Intersection over Union threshold value for positive prior boxes
+        neg_iou_threshold = Intersection over Union threshold value for negative prior boxes
 
     outputs:
-        pos_bbox_indices = (batch_size, iou > iou_threshold)
-        gt_box_indices = (batch_size, iou > iou_threshold)
+        pos_bbox_indices = (batch_size, iou > pos_iou_threshold)
+        neg_bbox_indices = (batch_size, iou < neg_iou_threshold)
+        gt_box_indices = (batch_size, iou > pos_iou_threshold)
     """
     # Calculate iou values between each bboxes and ground truth boxes
     iou_map = generate_iou_map(bboxes, gt_boxes)
@@ -306,14 +310,16 @@ def get_selected_indices(bboxes, gt_boxes, iou_threshold):
     # IoU map has iou values for every gt boxes and we merge these values column wise
     merged_iou_map = tf.reduce_max(iou_map, axis=2)
     #
-    pos_cond = tf.greater(merged_iou_map, iou_threshold)
+    pos_cond = tf.greater(merged_iou_map, pos_iou_threshold)
+    neg_cond = tf.less(merged_iou_map, neg_iou_threshold)
     pos_bbox_indices = tf.cast(tf.where(pos_cond), tf.int32)
+    neg_bbox_indices = tf.cast(tf.where(neg_cond), tf.int32)
     batch_indices = pos_bbox_indices[:,0]
     #
     gt_box_indices = tf.gather_nd(max_indices_each_gt_box, pos_bbox_indices)
     gt_box_indices = tf.stack([batch_indices, gt_box_indices], axis=1)
     #
-    return pos_bbox_indices, gt_box_indices
+    return pos_bbox_indices, neg_bbox_indices, gt_box_indices
 
 def get_tiled_indices(batch_size, row_size):
     """Generating tiled batch indices for "row_size" times.

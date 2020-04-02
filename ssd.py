@@ -16,18 +16,19 @@ def loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas):
     outputs:
         loc_loss = localization / regression / bounding box loss value
     """
-    pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, 0), axis=2)
-    pos_bbox_indices = tf.where(pos_cond)
-    pos_bbox_count = tf.math.count_nonzero(pos_cond, axis=1)
+    # Localization / bbox / regression loss calculation for all bboxes
+    loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.NONE)
+    loc_loss_for_all = loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas)
+    loc_loss_for_all = tf.reduce_sum(loc_loss_for_all, axis=-1)
     #
-    total_pos_bboxes = tf.cast(tf.reduce_sum(pos_bbox_count), tf.float32)
-    # Localization / Bbox loss calculation for pos bounding boxes
-    y_true_bbox = tf.gather_nd(actual_bbox_deltas, pos_bbox_indices)
-    y_pred_bbox = tf.gather_nd(pred_bbox_deltas, pos_bbox_indices)
-    loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.SUM)
-    loc_loss = loc_loss_fn(y_true_bbox, y_pred_bbox)
+    pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, tf.constant(0.0)), axis=2)
+    pos_mask = tf.where(pos_cond, tf.constant(1.0), tf.constant(0.0))
+    total_pos_bboxes = tf.reduce_sum(pos_mask, axis=1)
     #
-    loc_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), loc_loss / total_pos_bboxes, 0.0)
+    loc_loss = tf.reduce_sum(pos_mask * loc_loss_for_all, axis=-1)
+    total_pos_bboxes = tf.where(tf.equal(total_pos_bboxes, tf.constant(0.0)), tf.constant(1.0), total_pos_bboxes)
+    loc_loss = loc_loss / total_pos_bboxes
+    #
     return loc_loss
 
 def conf_loss_fn(actual_labels, pred_labels):
@@ -39,30 +40,28 @@ def conf_loss_fn(actual_labels, pred_labels):
     outputs:
         conf_loss = confidence / class / label loss value
     """
+    neg_pos_ratio = tf.constant(3.0)
     # Confidence / Label loss calculation for all labels
     conf_loss_fn = tf.losses.CategoricalCrossentropy(reduction=tf.losses.Reduction.NONE)
     conf_loss_for_all = conf_loss_fn(actual_labels, pred_labels)
     #
-    pos_cond = tf.not_equal(actual_labels[..., -1], 1)
-    pos_bbox_indices = tf.where(pos_cond)
-    pos_bbox_count = tf.math.count_nonzero(pos_cond, axis=1)
+    pos_cond = tf.reduce_any(tf.not_equal(actual_labels[..., 1:], tf.constant(0.0)), axis=2)
+    pos_mask = tf.where(pos_cond, tf.constant(1.0), tf.constant(0.0))
+    total_pos_bboxes = tf.reduce_sum(pos_mask, axis=1)
     # Hard negative mining
-    neg_bbox_indices_count = tf.cast(pos_bbox_count * 3, tf.int32)
-    # Remove positive index values from negative calculations
-    masked_loss = tf.where(pos_cond, float("-inf"), conf_loss_for_all)
-    # Sort loss values in descending order
-    sorted_loss = tf.cast(tf.argsort(masked_loss, direction="DESCENDING"), tf.int64)
-    batch_size, total_items = tf.shape(sorted_loss)[0], tf.shape(sorted_loss)[1]
-    sorted_loss_indices = tf.tile([tf.range(total_items)], (batch_size, 1))
-    neg_cond = sorted_loss_indices < tf.expand_dims(neg_bbox_indices_count, 1)
-    neg_bbox_indices = tf.stack([tf.where(neg_cond)[:,0], sorted_loss[neg_cond]], 1)
+    total_neg_bboxes = tf.cast(total_pos_bboxes * neg_pos_ratio, tf.int32)
     #
-    total_pos_bboxes = tf.cast(tf.reduce_sum(pos_bbox_count), tf.float32)
-    # Confidence / Label loss calculation for pos + neg bounding boxes
-    selected_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
-    conf_loss = tf.reduce_sum(tf.gather_nd(conf_loss_for_all, selected_indices))
+    masked_loss = conf_loss_for_all * actual_labels[..., 0]
+    sorted_loss = tf.argsort(masked_loss, direction="DESCENDING")
+    sorted_loss = tf.argsort(sorted_loss)
+    neg_cond = sorted_loss < tf.expand_dims(total_neg_bboxes, axis=1)
+    neg_mask = tf.where(neg_cond, tf.constant(1.0), tf.constant(0.0))
     #
-    conf_loss = tf.where(tf.not_equal(total_pos_bboxes, 0), conf_loss / total_pos_bboxes, 0.0)
+    final_mask = pos_mask + neg_mask
+    conf_loss = tf.reduce_sum(final_mask * conf_loss_for_all, axis=-1)
+    total_pos_bboxes = tf.where(tf.equal(total_pos_bboxes, tf.constant(0.0)), tf.constant(1.0), total_pos_bboxes)
+    conf_loss = conf_loss / total_pos_bboxes
+    #
     return conf_loss
 
 class L2Normalization(Layer):
@@ -139,7 +138,7 @@ def get_model(hyper_params):
         ssd_model = tf.keras.model
     """
     scale_factor = 20.0
-    reg_factor = 2e-4
+    reg_factor = 5e-4
     total_labels = hyper_params["total_labels"]
     # +1 for ratio 1
     len_aspect_ratios = [len(x) + 1 for x in hyper_params["aspect_ratios"]]
@@ -343,18 +342,23 @@ def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     """
     batch_size = tf.shape(gt_boxes)[0]
     total_labels = hyper_params["total_labels"]
-    iou_threshold = hyper_params["iou_threshold"]
+    pos_iou_threshold = hyper_params["pos_iou_threshold"]
+    neg_iou_threshold = hyper_params["neg_iou_threshold"]
     variances = hyper_params["variances"]
     total_prior_boxes = prior_boxes.shape[0]
-    pos_bbox_indices, gt_box_indices = helpers.get_selected_indices(prior_boxes, gt_boxes, iou_threshold)
+    pos_bbox_indices, neg_bbox_indices, gt_box_indices = helpers.get_selected_indices(prior_boxes, gt_boxes, pos_iou_threshold, neg_iou_threshold)
     #
     gt_boxes_map = tf.gather_nd(gt_boxes, gt_box_indices)
     expanded_gt_boxes = tf.scatter_nd(pos_bbox_indices, gt_boxes_map, (batch_size, total_prior_boxes, 4))
     bbox_deltas = helpers.get_deltas_from_bboxes(prior_boxes, expanded_gt_boxes) / variances
     #
     pos_gt_labels_map = tf.gather_nd(gt_labels, gt_box_indices)
-    bbox_labels = tf.fill((batch_size, total_prior_boxes), total_labels-1)
-    bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, pos_bbox_indices, pos_gt_labels_map)
-    bbox_labels = tf.one_hot(bbox_labels, total_labels)
+    neg_gt_labels_map = tf.zeros(tf.shape(neg_bbox_indices)[0], dtype=tf.int32)
+    gt_labels_map = tf.concat([pos_gt_labels_map, neg_gt_labels_map], 0)
+    gt_labels_map = tf.one_hot(gt_labels_map, total_labels)
+    #
+    scatter_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
+    bbox_labels = tf.zeros((batch_size, total_prior_boxes, total_labels), dtype=tf.float32)
+    bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, scatter_indices, gt_labels_map)
     #
     return bbox_deltas, bbox_labels
