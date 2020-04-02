@@ -19,10 +19,11 @@ def loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas):
     # Localization / bbox / regression loss calculation for all bboxes
     loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.NONE)
     loc_loss_for_all = loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas)
+    # Remove below operation if use tf 2.2.0-rc2 or higher version
     loc_loss_for_all = tf.reduce_sum(loc_loss_for_all, axis=-1)
     #
     pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, tf.constant(0.0)), axis=2)
-    pos_mask = tf.where(pos_cond, tf.constant(1.0), tf.constant(0.0))
+    pos_mask = tf.cast(pos_cond, dtype=tf.float32)
     total_pos_bboxes = tf.reduce_sum(pos_mask, axis=1)
     #
     loc_loss = tf.reduce_sum(pos_mask * loc_loss_for_all, axis=-1)
@@ -46,7 +47,7 @@ def conf_loss_fn(actual_labels, pred_labels):
     conf_loss_for_all = conf_loss_fn(actual_labels, pred_labels)
     #
     pos_cond = tf.reduce_any(tf.not_equal(actual_labels[..., 1:], tf.constant(0.0)), axis=2)
-    pos_mask = tf.where(pos_cond, tf.constant(1.0), tf.constant(0.0))
+    pos_mask = tf.cast(pos_cond, dtype=tf.float32)
     total_pos_bboxes = tf.reduce_sum(pos_mask, axis=1)
     # Hard negative mining
     total_neg_bboxes = tf.cast(total_pos_bboxes * neg_pos_ratio, tf.int32)
@@ -55,7 +56,7 @@ def conf_loss_fn(actual_labels, pred_labels):
     sorted_loss = tf.argsort(masked_loss, direction="DESCENDING")
     sorted_loss = tf.argsort(sorted_loss)
     neg_cond = sorted_loss < tf.expand_dims(total_neg_bboxes, axis=1)
-    neg_mask = tf.where(neg_cond, tf.constant(1.0), tf.constant(0.0))
+    neg_mask = tf.cast(neg_cond, dtype=tf.float32)
     #
     final_mask = pos_mask + neg_mask
     conf_loss = tf.reduce_sum(final_mask * conf_loss_for_all, axis=-1)
@@ -358,7 +359,6 @@ def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     gt_labels_map = tf.one_hot(gt_labels_map, total_labels)
     #
     scatter_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
-    bbox_labels = tf.zeros((batch_size, total_prior_boxes, total_labels), dtype=tf.float32)
-    bbox_labels = tf.tensor_scatter_nd_update(bbox_labels, scatter_indices, gt_labels_map)
+    bbox_labels = tf.scatter_nd(scatter_indices, gt_labels_map, (batch_size, total_prior_boxes, total_labels))
     #
     return bbox_deltas, bbox_labels
