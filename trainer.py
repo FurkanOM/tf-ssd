@@ -7,8 +7,8 @@ args = helpers.handle_args()
 if args.handle_gpu:
     helpers.handle_gpu_compatibility()
 
-batch_size = 8
-epochs = 150
+batch_size = 32
+epochs = 200
 load_weights = False
 ssd_type = "ssd300"
 hyper_params = helpers.get_hyper_params(ssd_type)

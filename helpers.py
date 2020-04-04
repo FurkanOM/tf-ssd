@@ -5,7 +5,6 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 import matplotlib.pyplot as plt
 import numpy as np
-import math
 from datetime import datetime
 
 SSD = {
@@ -132,7 +131,7 @@ def get_step_size(total_items, batch_size):
     outputs:
         step_size = number of step size for model training
     """
-    return math.ceil(total_items / batch_size)
+    return int(np.ceil(total_items / batch_size))
 
 def get_total_item_size(info, split):
     """Get total item size for given split.
@@ -172,7 +171,7 @@ def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
     """
     img = image_data["image"]
     gt_boxes = image_data["objects"]["bbox"]
-    gt_labels = tf.cast(image_data["objects"]["label"], tf.int32) + 1
+    gt_labels = tf.cast(image_data["objects"]["label"] + 1, tf.int32)
     if augmentation_fn:
         img, gt_boxes, gt_labels = augmentation_fn(img, gt_boxes, gt_labels)
     img = resize_image(img, final_height, final_width)
