@@ -19,37 +19,6 @@ SSD = {
                          [1., 2., 1./2.]],
     }
 }
-###############################################################
-## Custom callback for model saving and early stopping
-###############################################################
-class CustomCallback(tf.keras.callbacks.Callback):
-    def __init__(self, model_path, monitor, patience=0):
-        super(CustomCallback, self).__init__()
-        self.model_path = model_path
-        self.monitor = monitor
-        self.patience = patience
-
-    def on_train_begin(self, logs=None):
-        self.patience_counter = 0
-        self.best_loss = float("inf")
-        self.last_epoch = 0
-
-    def on_epoch_end(self, epoch, logs=None):
-        self.last_epoch = epoch
-        current = logs.get(self.monitor)
-        if tf.less(current, self.best_loss):
-            self.best_loss = current
-            self.patience_counter = 0
-            self.model.save_weights(self.model_path)
-        else:
-            self.patience_counter += 1
-            if self.patience_counter >= self.patience:
-                self.model.stop_training = True
-
-    def on_train_end(self, logs=None):
-        if self.last_epoch:
-            print("Training early stopped at {0} epoch because loss value did not decrease last {1} epochs".format(self.last_epoch+1, self.patience))
-###############################################################
 
 def get_log_path(model_type, custom_postfix=""):
     """Generating log path from model_type value for tensorboard.
@@ -173,7 +142,7 @@ def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
     gt_boxes = image_data["objects"]["bbox"]
     gt_labels = tf.cast(image_data["objects"]["label"] + 1, tf.int32)
     if augmentation_fn:
-        img, gt_boxes, gt_labels = augmentation_fn(img, gt_boxes, gt_labels)
+        img, gt_boxes = augmentation_fn(img, gt_boxes)
     img = resize_image(img, final_height, final_width)
     return img, gt_boxes, gt_labels
 
@@ -288,37 +257,6 @@ def generate_iou_map(bboxes, gt_boxes, transpose_perm=[0, 2, 1]):
     union_area = (tf.expand_dims(bbox_area, -1) + tf.expand_dims(gt_area, gt_expand_axis) - intersection_area)
     # Intersection over Union
     return intersection_area / union_area
-
-def get_selected_indices(bboxes, gt_boxes, pos_iou_threshold, neg_iou_threshold):
-    """Calculating indices for each bounding box and correspond ground truth box.
-    inputs:
-        bboxes = (total_bboxes, [y1, x1, y2, x2])
-        gt_boxes = (batch_size, total_gt_boxes, [y1, x1, y2, x2])
-        pos_iou_threshold = Intersection over Union threshold value for positive prior boxes
-        neg_iou_threshold = Intersection over Union threshold value for negative prior boxes
-
-    outputs:
-        pos_bbox_indices = (batch_size, iou > pos_iou_threshold)
-        neg_bbox_indices = (batch_size, iou < neg_iou_threshold)
-        gt_box_indices = (batch_size, iou > pos_iou_threshold)
-    """
-    # Calculate iou values between each bboxes and ground truth boxes
-    iou_map = generate_iou_map(bboxes, gt_boxes)
-    # Get max index value for each row
-    max_indices_each_gt_box = tf.argmax(iou_map, axis=2, output_type=tf.int32)
-    # IoU map has iou values for every gt boxes and we merge these values column wise
-    merged_iou_map = tf.reduce_max(iou_map, axis=2)
-    #
-    pos_cond = tf.greater(merged_iou_map, pos_iou_threshold)
-    neg_cond = tf.less(merged_iou_map, neg_iou_threshold)
-    pos_bbox_indices = tf.cast(tf.where(pos_cond), tf.int32)
-    neg_bbox_indices = tf.cast(tf.where(neg_cond), tf.int32)
-    batch_indices = pos_bbox_indices[:,0]
-    #
-    gt_box_indices = tf.gather_nd(max_indices_each_gt_box, pos_bbox_indices)
-    gt_box_indices = tf.stack([batch_indices, gt_box_indices], axis=1)
-    #
-    return pos_bbox_indices, neg_bbox_indices, gt_box_indices
 
 def get_tiled_indices(batch_size, row_size):
     """Generating tiled batch indices for "row_size" times.

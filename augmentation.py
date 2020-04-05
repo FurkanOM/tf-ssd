@@ -1,7 +1,7 @@
 import tensorflow as tf
 import helpers
 
-def apply(img, gt_boxes, gt_labels):
+def apply(img, gt_boxes):
     # Color operations
     # Randomly change hue, saturation, brightness and contrast of image
     color_methods = [random_brightness, random_contrast, random_hue, random_saturation]
@@ -12,16 +12,16 @@ def apply(img, gt_boxes, gt_labels):
     for augmentation_method in color_methods + geometric_methods:
         img, gt_boxes = randomly_apply_operation(augmentation_method, img, gt_boxes)
     #
-    return img, gt_boxes, gt_labels
+    return img, gt_boxes
 
 def get_random_bool():
     return tf.random.uniform((), dtype=tf.float32) > 0.5
 
-def randomly_apply_operation(operation, img, gt_boxes):
+def randomly_apply_operation(operation, img, gt_boxes, *args):
     return tf.cond(
         get_random_bool(),
-        lambda: operation(img, gt_boxes),
-        lambda: (img, gt_boxes)
+        lambda: operation(img, gt_boxes, *args),
+        lambda: (img, gt_boxes, *args)
     )
 
 def random_brightness(img, gt_boxes, max_delta=0.12):
@@ -140,11 +140,7 @@ def patch(img, gt_boxes):
     # Denormalizing bounding boxes for further operations
     denormalized_gt_boxes = helpers.denormalize_bboxes(gt_boxes, height, width)
     # Randomly expand image and adjust bounding boxes
-    img, denormalized_gt_boxes, height, width = tf.cond(
-        get_random_bool(),
-        lambda: expand_image(img, denormalized_gt_boxes, height, width),
-        lambda: (img, denormalized_gt_boxes, height, width)
-    )
+    img, denormalized_gt_boxes, height, width = randomly_apply_operation(expand_image, img, denormalized_gt_boxes, height, width)
     # while loop start
     cond = lambda has_valid_patch, counter, data: tf.logical_and(tf.logical_not(has_valid_patch), tf.less(counter, 10))
     body = lambda has_valid_patch, counter, data: get_random_valid_patch(img, denormalized_gt_boxes, height, width, counter)

@@ -23,8 +23,10 @@ class CustomLoss(object):
         # Localization / bbox / regression loss calculation for all bboxes
         loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.NONE)
         loc_loss_for_all = loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas)
-        # Remove below operation if use tf 2.2.0-rc2 or higher version
-        loc_loss_for_all = tf.reduce_sum(loc_loss_for_all, axis=-1)
+        # After tf 2.2.0 version, the huber calculates mean over the last axis
+        loc_loss_for_all = tf.cond(tf.rank(loc_loss_for_all) > tf.constant(2),
+                                   lambda: tf.reduce_sum(loc_loss_for_all, axis=-1),
+                                   lambda: loc_loss_for_all * tf.constant(4.0, dtype=tf.float32))
         #
         pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, tf.constant(0.0)), axis=2)
         pos_mask = tf.cast(pos_cond, dtype=tf.float32)
@@ -350,7 +352,7 @@ def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     neg_iou_threshold = hyper_params["neg_iou_threshold"]
     variances = hyper_params["variances"]
     total_prior_boxes = prior_boxes.shape[0]
-    pos_bbox_indices, neg_bbox_indices, gt_box_indices = helpers.get_selected_indices(prior_boxes, gt_boxes, pos_iou_threshold, neg_iou_threshold)
+    pos_bbox_indices, neg_bbox_indices, gt_box_indices = get_selected_indices(prior_boxes, gt_boxes, pos_iou_threshold, neg_iou_threshold)
     #
     gt_boxes_map = tf.gather_nd(gt_boxes, gt_box_indices)
     expanded_gt_boxes = tf.scatter_nd(pos_bbox_indices, gt_boxes_map, (batch_size, total_prior_boxes, 4))
@@ -365,3 +367,34 @@ def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     bbox_labels = tf.scatter_nd(scatter_indices, gt_labels_map, (batch_size, total_prior_boxes, total_labels))
     #
     return bbox_deltas, bbox_labels
+
+def get_selected_indices(bboxes, gt_boxes, pos_iou_threshold, neg_iou_threshold):
+    """Calculating indices for each bounding box and correspond ground truth box.
+    inputs:
+        bboxes = (total_bboxes, [y1, x1, y2, x2])
+        gt_boxes = (batch_size, total_gt_boxes, [y1, x1, y2, x2])
+        pos_iou_threshold = Intersection over Union threshold value for positive prior boxes
+        neg_iou_threshold = Intersection over Union threshold value for negative prior boxes
+
+    outputs:
+        pos_bbox_indices = (batch_size, iou > pos_iou_threshold)
+        neg_bbox_indices = (batch_size, iou < neg_iou_threshold)
+        gt_box_indices = (batch_size, iou > pos_iou_threshold)
+    """
+    # Calculate iou values between each bboxes and ground truth boxes
+    iou_map = helpers.generate_iou_map(bboxes, gt_boxes)
+    # Get max index value for each row
+    max_indices_each_gt_box = tf.argmax(iou_map, axis=2, output_type=tf.int32)
+    # IoU map has iou values for every gt boxes and we merge these values column wise
+    merged_iou_map = tf.reduce_max(iou_map, axis=2)
+    #
+    pos_cond = tf.greater(merged_iou_map, pos_iou_threshold)
+    neg_cond = tf.less(merged_iou_map, neg_iou_threshold)
+    pos_bbox_indices = tf.cast(tf.where(pos_cond), tf.int32)
+    neg_bbox_indices = tf.cast(tf.where(neg_cond), tf.int32)
+    batch_indices = pos_bbox_indices[:,0]
+    #
+    gt_box_indices = tf.gather_nd(max_indices_each_gt_box, pos_bbox_indices)
+    gt_box_indices = tf.stack([batch_indices, gt_box_indices], axis=1)
+    #
+    return pos_bbox_indices, neg_bbox_indices, gt_box_indices

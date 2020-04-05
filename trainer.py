@@ -1,4 +1,6 @@
 import tensorflow as tf
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRateScheduler
+from tensorflow.keras.optimizers import SGD, Adam
 import helpers
 import augmentation
 import ssd
@@ -8,7 +10,7 @@ if args.handle_gpu:
     helpers.handle_gpu_compatibility()
 
 batch_size = 32
-epochs = 200
+epochs = 150
 load_weights = False
 ssd_type = "ssd300"
 hyper_params = helpers.get_hyper_params(ssd_type)
@@ -32,8 +34,9 @@ VOC_train_data = VOC_train_data.shuffle(batch_size*4).padded_batch(batch_size, p
 VOC_val_data = VOC_val_data.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
 #
 ssd_model = ssd.get_model(hyper_params)
-ssd_model.compile(optimizer=tf.optimizers.Adam(learning_rate=1e-3),
-                  loss=[ssd.loc_loss_fn, ssd.conf_loss_fn])
+ssd_loss = ssd.CustomLoss(hyper_params["neg_pos_ratio"], hyper_params["loc_loss_alpha"])
+ssd_model.compile(optimizer=Adam(learning_rate=1e-3),
+                  loss=[ssd_loss.loc_loss_fn, ssd_loss.conf_loss_fn])
 ssd.init_model(ssd_model)
 #
 ssd_model_path = helpers.get_model_path(ssd_type)
@@ -45,12 +48,12 @@ prior_boxes = ssd.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper
 ssd_train_feed = ssd.generator(VOC_train_data, prior_boxes, hyper_params)
 ssd_val_feed = ssd.generator(VOC_val_data, prior_boxes, hyper_params)
 
-custom_callback = helpers.CustomCallback(ssd_model_path, monitor="val_loss", patience=epochs)
-tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=ssd_log_path)
+checkpoint_callback = ModelCheckpoint(ssd_model_path, monitor="val_loss", save_best_only=True, save_weights_only=True)
+tensorboard_callback = TensorBoard(log_dir=ssd_log_path)
 
 ssd_model.fit(ssd_train_feed,
               steps_per_epoch=step_size_train,
               validation_data=ssd_val_feed,
               validation_steps=step_size_val,
               epochs=epochs,
-              callbacks=[custom_callback, tensorboard_callback])
+              callbacks=[checkpoint_callback, tensorboard_callback])
