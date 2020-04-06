@@ -78,10 +78,8 @@ def get_center_in_patch_condition(patch, gt_boxes):
     center_in_patch = tf.logical_and(center_x_in_patch, center_y_in_patch)
     return center_in_patch
 
-def get_random_valid_patch(img, gt_boxes, height, width, counter):
+def get_random_valid_patch(img, gt_boxes, height, width, min_overlap, counter):
     counter = tf.add(counter, 1)
-    # Get random minimum overlap value
-    min_overlap = get_random_min_overlap()
     # Generating random patch using image height and width values
     random_patch = generate_random_patch(height, width)
     # Calculate jaccard/iou value for each bounding box
@@ -141,9 +139,11 @@ def patch(img, gt_boxes):
     denormalized_gt_boxes = helpers.denormalize_bboxes(gt_boxes, height, width)
     # Randomly expand image and adjust bounding boxes
     img, denormalized_gt_boxes, height, width = randomly_apply_operation(expand_image, img, denormalized_gt_boxes, height, width)
+    # Get random minimum overlap value
+    min_overlap = get_random_min_overlap()
     # while loop start
     cond = lambda has_valid_patch, counter, data: tf.logical_and(tf.logical_not(has_valid_patch), tf.less(counter, 10))
-    body = lambda has_valid_patch, counter, data: get_random_valid_patch(img, denormalized_gt_boxes, height, width, counter)
+    body = lambda has_valid_patch, counter, data: get_random_valid_patch(img, denormalized_gt_boxes, height, width, min_overlap, counter)
     _,_, (img, denormalized_gt_boxes, height, width) = tf.while_loop(cond, body, [tf.constant(False, tf.bool), tf.constant(0, tf.int32), (img, denormalized_gt_boxes, height, width)])
     # while loop end
     gt_boxes = helpers.normalize_bboxes(denormalized_gt_boxes, height, width)
