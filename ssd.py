@@ -348,53 +348,24 @@ def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     """
     batch_size = tf.shape(gt_boxes)[0]
     total_labels = hyper_params["total_labels"]
-    pos_iou_threshold = hyper_params["pos_iou_threshold"]
-    neg_iou_threshold = hyper_params["neg_iou_threshold"]
+    iou_threshold = hyper_params["iou_threshold"]
     variances = hyper_params["variances"]
     total_prior_boxes = prior_boxes.shape[0]
-    pos_bbox_indices, neg_bbox_indices, gt_box_indices = get_selected_indices(prior_boxes, gt_boxes, pos_iou_threshold, neg_iou_threshold)
-    #
-    gt_boxes_map = tf.gather_nd(gt_boxes, gt_box_indices)
-    expanded_gt_boxes = tf.scatter_nd(pos_bbox_indices, gt_boxes_map, (batch_size, total_prior_boxes, 4))
-    bbox_deltas = helpers.get_deltas_from_bboxes(prior_boxes, expanded_gt_boxes) / variances
-    #
-    pos_gt_labels_map = tf.gather_nd(gt_labels, gt_box_indices)
-    neg_gt_labels_map = tf.zeros(tf.shape(neg_bbox_indices)[0], dtype=tf.int32)
-    gt_labels_map = tf.concat([pos_gt_labels_map, neg_gt_labels_map], 0)
-    gt_labels_map = tf.one_hot(gt_labels_map, total_labels)
-    #
-    scatter_indices = tf.concat([pos_bbox_indices, neg_bbox_indices], 0)
-    bbox_labels = tf.scatter_nd(scatter_indices, gt_labels_map, (batch_size, total_prior_boxes, total_labels))
-    #
-    return bbox_deltas, bbox_labels
-
-def get_selected_indices(bboxes, gt_boxes, pos_iou_threshold, neg_iou_threshold):
-    """Calculating indices for each bounding box and correspond ground truth box.
-    inputs:
-        bboxes = (total_bboxes, [y1, x1, y2, x2])
-        gt_boxes = (batch_size, total_gt_boxes, [y1, x1, y2, x2])
-        pos_iou_threshold = Intersection over Union threshold value for positive prior boxes
-        neg_iou_threshold = Intersection over Union threshold value for negative prior boxes
-
-    outputs:
-        pos_bbox_indices = (batch_size, iou > pos_iou_threshold)
-        neg_bbox_indices = (batch_size, iou < neg_iou_threshold)
-        gt_box_indices = (batch_size, iou > pos_iou_threshold)
-    """
     # Calculate iou values between each bboxes and ground truth boxes
-    iou_map = helpers.generate_iou_map(bboxes, gt_boxes)
+    iou_map = helpers.generate_iou_map(prior_boxes, gt_boxes)
     # Get max index value for each row
     max_indices_each_gt_box = tf.argmax(iou_map, axis=2, output_type=tf.int32)
     # IoU map has iou values for every gt boxes and we merge these values column wise
     merged_iou_map = tf.reduce_max(iou_map, axis=2)
     #
-    pos_cond = tf.greater(merged_iou_map, pos_iou_threshold)
-    neg_cond = tf.less(merged_iou_map, neg_iou_threshold)
-    pos_bbox_indices = tf.cast(tf.where(pos_cond), tf.int32)
-    neg_bbox_indices = tf.cast(tf.where(neg_cond), tf.int32)
-    batch_indices = pos_bbox_indices[:,0]
+    pos_cond = tf.greater(merged_iou_map, iou_threshold)
     #
-    gt_box_indices = tf.gather_nd(max_indices_each_gt_box, pos_bbox_indices)
-    gt_box_indices = tf.stack([batch_indices, gt_box_indices], axis=1)
+    gt_boxes_map = tf.gather(gt_boxes, max_indices_each_gt_box, batch_dims=1)
+    expanded_gt_boxes = tf.where(tf.expand_dims(pos_cond, -1), gt_boxes_map, tf.zeros_like(gt_boxes_map))
+    bbox_deltas = helpers.get_deltas_from_bboxes(prior_boxes, expanded_gt_boxes) / variances
     #
-    return pos_bbox_indices, neg_bbox_indices, gt_box_indices
+    gt_labels_map = tf.gather(gt_labels, max_indices_each_gt_box, batch_dims=1)
+    expanded_gt_labels = tf.where(pos_cond, gt_labels_map, tf.zeros_like(gt_labels_map))
+    bbox_labels = tf.one_hot(expanded_gt_labels, total_labels)
+    #
+    return bbox_deltas, bbox_labels
