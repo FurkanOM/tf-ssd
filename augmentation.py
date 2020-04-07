@@ -2,6 +2,16 @@ import tensorflow as tf
 import helpers
 
 def apply(img, gt_boxes):
+    """Randomly applying data augmentation methods to image and ground truth boxes.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+            in normalized form [0, 1]
+    outputs:
+        modified_img = (final_height, final_width, depth)
+        modified_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+            in normalized form [0, 1]
+    """
     # Color operations
     # Randomly change hue, saturation, brightness and contrast of image
     color_methods = [random_brightness, random_contrast, random_hue, random_saturation]
@@ -15,9 +25,22 @@ def apply(img, gt_boxes):
     return img, gt_boxes
 
 def get_random_bool():
+    """Generating random boolean.
+    outputs:
+        random boolean 0d tensor
+    """
     return tf.random.uniform((), dtype=tf.float32) > 0.5
 
 def randomly_apply_operation(operation, img, gt_boxes, *args):
+    """Randomly applying given method to image and ground truth boxes.
+    inputs:
+        operation = callable method
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        modified_or_not_img = (final_height, final_width, depth)
+        modified_or_not_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    """
     return tf.cond(
         get_random_bool(),
         lambda: operation(img, gt_boxes, *args),
@@ -25,18 +48,58 @@ def randomly_apply_operation(operation, img, gt_boxes, *args):
     )
 
 def random_brightness(img, gt_boxes, max_delta=0.12):
+    """Randomly change brightness of the image.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        modified_img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    """
     return tf.image.random_brightness(img, max_delta), gt_boxes
 
 def random_contrast(img, gt_boxes, lower=0.5, upper=1.5):
+    """Randomly change contrast of the image.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        modified_img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    """
     return tf.image.random_contrast(img, lower, upper), gt_boxes
 
 def random_hue(img, gt_boxes, max_delta=0.08):
+    """Randomly change hue of the image.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        modified_img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    """
     return tf.image.random_hue(img, max_delta), gt_boxes
 
 def random_saturation(img, gt_boxes, lower=0.5, upper=1.5):
+    """Randomly change saturation of the image.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        modified_img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    """
     return tf.image.random_saturation(img, lower, upper), gt_boxes
 
 def flip_horizontally(img, gt_boxes):
+    """Flip image horizontally and adjust the ground truth boxes.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        modified_img = (height, width, depth)
+        modified_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    """
     flipped_img = tf.image.flip_left_right(img)
     flipped_gt_boxes = tf.stack([gt_boxes[..., 0],
                                 1.0 - gt_boxes[..., 3],
@@ -49,11 +112,27 @@ def flip_horizontally(img, gt_boxes):
 ##############################################################################
 
 def generate_random_height_width(height, width):
+    """Generating random height and width values for a given image dimensions.
+    inputs:
+        height = height of the image
+        width = width of the image
+    outputs:
+        random_height = generated height, between image height * 0.1 and image height
+        random_width = generated width, between image width * 0.1 and image width
+    """
     random_height = tf.random.uniform((), minval=height*0.1, maxval=height, dtype=tf.float32)
     random_width = tf.random.uniform((), minval=width*0.1, maxval=width, dtype=tf.float32)
     return random_height, random_width
 
 def generate_random_patch(height, width):
+    """Generating random patch for a given image dimensions.
+    inputs:
+        height = height of the image
+        width = width of the image
+    outputs:
+        coordinates = ([y1, x1, y2, x2])
+            not normalized
+    """
     min_aspect_ratio = 0.5
     max_aspect_ratio = 2
     cond = lambda h, w: tf.logical_or(h / w < min_aspect_ratio, h / w > max_aspect_ratio)
@@ -64,6 +143,13 @@ def generate_random_patch(height, width):
     return tf.round([random_top, random_left, random_top+random_height, random_left+random_width])
 
 def get_centers_of_bboxes(bboxes):
+    """Calculating centers of the given boxes.
+    inputs:
+        bboxes = (total_bbox_count, [y1, x1, y2, x2])
+    outputs:
+        center_x = (total_bbox_count, center_x)
+        center_y = (total_bbox_count, center_y)
+    """
     width = bboxes[..., 3] - bboxes[..., 1]
     height = bboxes[..., 2] - bboxes[..., 0]
     center_x = bboxes[..., 1] + width / 2
@@ -71,6 +157,14 @@ def get_centers_of_bboxes(bboxes):
     return center_x, center_y
 
 def get_center_in_patch_condition(patch, gt_boxes):
+    """Determine whether the center points of the given
+    ground truth objects are in the given patch.
+    inputs:
+        patch = ([y1, x1, y2, x2])
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        center_in_patch = ([ground_truth_object_count_bool])
+    """
     gt_center_x, gt_center_y = get_centers_of_bboxes(gt_boxes)
     patch_y1, patch_x1, patch_y2, patch_x2 = tf.split(patch, 4, axis=-1)
     center_x_in_patch = tf.logical_and(gt_center_x >= patch_x1, gt_center_x <= patch_x2)
@@ -78,7 +172,21 @@ def get_center_in_patch_condition(patch, gt_boxes):
     center_in_patch = tf.logical_and(center_x_in_patch, center_y_in_patch)
     return center_in_patch
 
-def get_random_valid_patch(img, gt_boxes, height, width, min_overlap, counter):
+def generate_and_apply_random_patch(img, gt_boxes, height, width, min_overlap, counter):
+    """Generating random patch and making the necessary changes for
+    the new patch if it meets the given min overlap and other conditions.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+        height = height of the image
+        width = width of the image
+        min_overlap = minimum overlap value for generated patch
+        counter = number of times the operation was performed
+    outputs:
+        has_valid_patch = generated patch valid or not bool 0d tensor
+        counter = (number of times the operation was performed) + 1
+        modified_or_not_data = (img, gt_boxes, height, width)
+    """
     counter = tf.add(counter, 1)
     # Generating random patch using image height and width values
     random_patch = generate_random_patch(height, width)
@@ -102,11 +210,22 @@ def get_random_valid_patch(img, gt_boxes, height, width, min_overlap, counter):
     return has_valid_patch, counter, (img, gt_boxes, height, width)
 
 def get_random_min_overlap():
+    """Generating random minimum overlap value.
+    outputs:
+        min_overlap = random minimum overlap value 0d tensor
+    """
     overlaps = tf.constant([0.1, 0.3, 0.5, 0.7, 0.9], dtype=tf.float32)
     i = tf.random.uniform((), minval=0, maxval=tf.shape(overlaps)[0], dtype=tf.int32)
     return overlaps[i]
 
 def update_bboxes_for_patch(patch, gt_boxes):
+    """Updating the coordinates of ground truth objects according to the new patch.
+    inputs:
+        patch = ([y1, x1, y2, x2])
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    outputs:
+        modified_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+    """
     y1 = gt_boxes[..., 0] - patch[0]
     x1 = gt_boxes[..., 1] - patch[1]
     y2 = gt_boxes[..., 2] - patch[0]
@@ -114,6 +233,18 @@ def update_bboxes_for_patch(patch, gt_boxes):
     return tf.stack([y1, x1, y2, x2], -1)
 
 def expand_image(img, denormalized_gt_boxes, height, width):
+    """Randomly expanding image and adjusting ground truth object coordinates.
+    inputs:
+        img = (height, width, depth)
+        denormalized_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+        height = height of the image
+        width = width of the image
+    outputs:
+        img = (final_height, final_width, depth)
+        modified_denormalized_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+        final_height = final height of the image
+        final_width = final width of the image
+    """
     expansion_ratio = tf.random.uniform((), minval=1.5, maxval=3, dtype=tf.float32)
     final_height, final_width = tf.round(height * expansion_ratio), tf.round(width * expansion_ratio)
     random_left = tf.round(tf.random.uniform((), minval=0, maxval=final_width - width, dtype=tf.float32))
@@ -133,6 +264,18 @@ def expand_image(img, denormalized_gt_boxes, height, width):
     return expanded_image, denormalized_gt_boxes, final_height, final_width
 
 def patch(img, gt_boxes):
+    """Generating random patch and adjusting image and ground truth objects to this patch.
+    After this operation some of the ground truth boxes / objects could be removed from the image.
+    However, these objects are not excluded from the output, only the coordinates are changed as zero.
+    inputs:
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+            in normalized form [0, 1]
+    outputs:
+        modified_img = (final_height, final_width, depth)
+        modified_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+            in normalized form [0, 1]
+    """
     img_shape = tf.shape(img)
     height, width = tf.cast(img_shape[0], tf.float32), tf.cast(img_shape[1], tf.float32)
     # Denormalizing bounding boxes for further operations
@@ -143,7 +286,7 @@ def patch(img, gt_boxes):
     min_overlap = get_random_min_overlap()
     # while loop start
     cond = lambda has_valid_patch, counter, data: tf.logical_and(tf.logical_not(has_valid_patch), tf.less(counter, 10))
-    body = lambda has_valid_patch, counter, data: get_random_valid_patch(img, denormalized_gt_boxes, height, width, min_overlap, counter)
+    body = lambda has_valid_patch, counter, data: generate_and_apply_random_patch(img, denormalized_gt_boxes, height, width, min_overlap, counter)
     _,_, (img, denormalized_gt_boxes, height, width) = tf.while_loop(cond, body, [tf.constant(False, tf.bool), tf.constant(0, tf.int32), (img, denormalized_gt_boxes, height, width)])
     # while loop end
     gt_boxes = helpers.normalize_bboxes(denormalized_gt_boxes, height, width)
