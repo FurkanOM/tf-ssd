@@ -2,7 +2,7 @@
 
 Tensorflow SSD implementation from scratch.
 
-It's implemented and tested with **tensorflow 2.0**
+It's implemented and tested with **tensorflow 2.0, 2.1, and 2.2**
 
 ## Usage
 

@@ -12,6 +12,7 @@ if args.handle_gpu:
 batch_size = 32
 epochs = 150
 load_weights = False
+with_voc2012 = True
 ssd_type = "ssd300"
 hyper_params = helpers.get_hyper_params(ssd_type)
 
@@ -19,6 +20,13 @@ VOC_train_data, VOC_info = helpers.get_dataset("voc/2007", "train+validation")
 VOC_val_data, _ = helpers.get_dataset("voc/2007", "test")
 VOC_train_total_items = helpers.get_total_item_size(VOC_info, "train+validation")
 VOC_val_total_items = helpers.get_total_item_size(VOC_info, "test")
+
+if with_voc2012:
+    VOC_2012_train_data, VOC_2012_info = helpers.get_dataset("voc/2012", "train+validation")
+    VOC_2012_train_total_items = helpers.get_total_item_size(VOC_2012_info, "train+validation")
+    VOC_train_total_items += VOC_2012_train_total_items
+    VOC_train_data = VOC_train_data.concatenate(VOC_2012_train_data)
+
 step_size_train = helpers.get_step_size(VOC_train_total_items, batch_size)
 step_size_val = helpers.get_step_size(VOC_val_total_items, batch_size)
 labels = helpers.get_labels(VOC_info)
