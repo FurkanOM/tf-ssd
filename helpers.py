@@ -20,6 +20,21 @@ SSD = {
     }
 }
 
+def scheduler(epoch):
+    """Generating learning rate value for a given epoch.
+    inputs:
+        epoch = number of current epoch
+
+    outputs:
+        learning_rate = float learning rate value
+    """
+    if epoch < 60:
+        return 1e-3
+    elif epoch < 100:
+        return 1e-4
+    else:
+        return 1e-5
+
 def get_log_path(model_type, custom_postfix=""):
     """Generating log path from model_type value for tensorboard.
     inputs:

@@ -43,7 +43,7 @@ VOC_val_data = VOC_val_data.padded_batch(batch_size, padded_shapes=padded_shapes
 #
 ssd_model = ssd.get_model(hyper_params)
 ssd_loss = ssd.CustomLoss(hyper_params["neg_pos_ratio"], hyper_params["loc_loss_alpha"])
-ssd_model.compile(optimizer=Adam(learning_rate=1e-3),
+ssd_model.compile(optimizer=SGD(learning_rate=1e-3),
                   loss=[ssd_loss.loc_loss_fn, ssd_loss.conf_loss_fn])
 ssd.init_model(ssd_model)
 #
@@ -58,10 +58,11 @@ ssd_val_feed = ssd.generator(VOC_val_data, prior_boxes, hyper_params)
 
 checkpoint_callback = ModelCheckpoint(ssd_model_path, monitor="val_loss", save_best_only=True, save_weights_only=True)
 tensorboard_callback = TensorBoard(log_dir=ssd_log_path)
+learning_rate_callback = LearningRateScheduler(helpers.scheduler, verbose=0)
 
 ssd_model.fit(ssd_train_feed,
               steps_per_epoch=step_size_train,
               validation_data=ssd_val_feed,
               validation_steps=step_size_val,
               epochs=epochs,
-              callbacks=[checkpoint_callback, tensorboard_callback])
+              callbacks=[checkpoint_callback, tensorboard_callback, learning_rate_callback])
