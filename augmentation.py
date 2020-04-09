@@ -111,36 +111,47 @@ def flip_horizontally(img, gt_boxes):
 ## Sample patch start
 ##############################################################################
 
-def generate_random_height_width(height, width):
-    """Generating random height and width values for a given image dimensions.
+def get_valid_patch_randomly(patches, valid_cond, center_cond):
+    """Selecting one valid patch and center conditions of this patch randomly.
     inputs:
-        height = height of the image
-        width = width of the image
+        patches = (number_of_valid_patches, [y1, x1, y2, x2])
+        valid_cond = (number_of_valid_patches, [ground_truth_object_count_bool])
+        center_cond = (number_of_valid_patches, [ground_truth_object_count_bool])
     outputs:
-        random_height = generated height, between image height * 0.1 and image height
-        random_width = generated width, between image width * 0.1 and image width
+        random_patch = ([y1, x1, y2, x2])
+        center_cond_for_patch = ([ground_truth_object_count_bool])
     """
-    random_height = tf.random.uniform((), minval=height*0.1, maxval=height, dtype=tf.float32)
-    random_width = tf.random.uniform((), minval=width*0.1, maxval=width, dtype=tf.float32)
-    return random_height, random_width
+    valid_cond = tf.reduce_any(valid_cond, axis=-1)
+    valid_indices = tf.where(valid_cond)
+    random_index = tf.random.uniform((), minval=0, maxval=tf.shape(valid_indices)[0], dtype=tf.int32)
+    random_index = valid_indices[random_index, 0]
+    random_patch = patches[random_index]
+    center_cond_for_patch = center_cond[random_index]
+    return random_patch, center_cond_for_patch
 
-def generate_random_patch(height, width):
-    """Generating random patch for a given image dimensions.
+def select_and_apply_patch(img, gt_boxes, patches, valid_cond, center_cond):
+    """Selecting randomly one valid patch and adjusting image and ground truth objects to this patch.
     inputs:
-        height = height of the image
-        width = width of the image
+        img = (height, width, depth)
+        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+        patches = (number_of_valid_patches, [y1, x1, y2, x2])
+        valid_cond = (number_of_valid_patches, [ground_truth_object_count_bool])
+        center_cond = (number_of_valid_patches, [ground_truth_object_count_bool])
     outputs:
-        coordinates = ([y1, x1, y2, x2])
-            not normalized
+        modified_img = (final_height, final_width, depth)
+        modified_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
+        height = final_height
+        width = final_width
     """
-    min_aspect_ratio = 0.5
-    max_aspect_ratio = 2
-    cond = lambda h, w: tf.logical_or(h / w < min_aspect_ratio, h / w > max_aspect_ratio)
-    body = lambda h, w: generate_random_height_width(height, width)
-    random_height, random_width = tf.while_loop(cond, body, [0.0, 1.0])
-    random_top = tf.random.uniform((), minval=0, maxval=height-random_height, dtype=tf.float32)
-    random_left = tf.random.uniform((), minval=0, maxval=width-random_width, dtype=tf.float32)
-    return tf.round([random_top, random_left, random_top+random_height, random_left+random_width])
+    random_patch, center_in_patch_condition = get_valid_patch_randomly(patches, valid_cond, center_cond)
+    #
+    height = random_patch[2] - random_patch[0]
+    width = random_patch[3] - random_patch[1]
+    gt_boxes = update_bboxes_for_patch(random_patch, gt_boxes)
+    gt_boxes = tf.where(tf.expand_dims(center_in_patch_condition, 1), gt_boxes, tf.zeros_like(gt_boxes))
+    random_patch = tf.cast(random_patch, tf.int32)
+    img = tf.image.crop_to_bounding_box(img, random_patch[0], random_patch[1], random_patch[2] - random_patch[0], random_patch[3] - random_patch[1])
+    return img, gt_boxes, height, width
 
 def get_centers_of_bboxes(bboxes):
     """Calculating centers of the given boxes.
@@ -172,43 +183,6 @@ def get_center_in_patch_condition(patch, gt_boxes):
     center_in_patch = tf.logical_and(center_x_in_patch, center_y_in_patch)
     return center_in_patch
 
-def generate_and_apply_random_patch(img, gt_boxes, height, width, min_overlap, counter):
-    """Generating random patch and making the necessary changes for
-    the new patch if it meets the given min overlap and other conditions.
-    inputs:
-        img = (height, width, depth)
-        gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
-        height = height of the image
-        width = width of the image
-        min_overlap = minimum overlap value for generated patch
-        counter = number of times the operation was performed
-    outputs:
-        has_valid_patch = generated patch valid or not bool 0d tensor
-        counter = (number of times the operation was performed) + 1
-        modified_or_not_data = (img, gt_boxes, height, width)
-    """
-    counter = tf.add(counter, 1)
-    # Generating random patch using image height and width values
-    random_patch = generate_random_patch(height, width)
-    # Calculate jaccard/iou value for each bounding box
-    iou_map = helpers.generate_iou_map(random_patch, gt_boxes, transpose_perm=[1, 0])
-    # Check each ground truth box center in the generated patch and return a boolean condition list
-    center_in_patch_condition = get_center_in_patch_condition(random_patch, gt_boxes)
-    # Check and merge center condition and minimum intersection condition
-    valid_patch_condition = tf.logical_and(center_in_patch_condition, iou_map > min_overlap)
-    # Check at least one valid ground truth box in new patch
-    has_valid_patch = tf.reduce_any(valid_patch_condition)
-    #
-    if has_valid_patch:
-        height = random_patch[2] - random_patch[0]
-        width = random_patch[3] - random_patch[1]
-        gt_boxes = update_bboxes_for_patch(random_patch, gt_boxes)
-        gt_boxes = tf.where(tf.expand_dims(center_in_patch_condition, 1), gt_boxes, tf.zeros_like(gt_boxes))
-        random_patch = tf.cast(random_patch, tf.int32)
-        img = tf.image.crop_to_bounding_box(img, random_patch[0], random_patch[1], random_patch[2] - random_patch[0], random_patch[3] - random_patch[1])
-    #
-    return has_valid_patch, counter, (img, gt_boxes, height, width)
-
 def get_random_min_overlap():
     """Generating random minimum overlap value.
     outputs:
@@ -232,6 +206,24 @@ def update_bboxes_for_patch(patch, gt_boxes):
     x2 = gt_boxes[..., 3] - patch[1]
     return tf.stack([y1, x1, y2, x2], -1)
 
+def generate_random_patches(height, width):
+    """Generating approximately 100 valid patches according to the min and max aspect ratios.
+    inputs:
+        height = height of the image
+        width = width of the image
+    outputs:
+        patches = (number_of_valid_patches, [y1, x1, y2, x2])
+    """
+    coords = tf.random.uniform((1000, 4), minval=0.1, maxval=1., dtype=tf.float32)
+    coords = tf.round(coords * [height, width, height, width])
+    h = coords[..., 2] - coords[..., 0]
+    w = coords[..., 3] - coords[..., 1]
+    hw_ratio = h / w
+    pos_cond = tf.logical_and(h > 0.0, w > 0.0)
+    aspect_ratio_cond = tf.logical_and(hw_ratio > 0.5, hw_ratio < 2.0)
+    valid_cond = tf.logical_and(pos_cond, aspect_ratio_cond)
+    return coords[valid_cond]
+
 def expand_image(img, denormalized_gt_boxes, height, width):
     """Randomly expanding image and adjusting ground truth object coordinates.
     inputs:
@@ -245,7 +237,7 @@ def expand_image(img, denormalized_gt_boxes, height, width):
         final_height = final height of the image
         final_width = final width of the image
     """
-    expansion_ratio = tf.random.uniform((), minval=1.5, maxval=3, dtype=tf.float32)
+    expansion_ratio = tf.random.uniform((), minval=1, maxval=4, dtype=tf.float32)
     final_height, final_width = tf.round(height * expansion_ratio), tf.round(width * expansion_ratio)
     random_left = tf.round(tf.random.uniform((), minval=0, maxval=final_width - width, dtype=tf.float32))
     random_top = tf.round(tf.random.uniform((), minval=0, maxval=final_height - height, dtype=tf.float32))
@@ -282,17 +274,23 @@ def patch(img, gt_boxes):
     denormalized_gt_boxes = helpers.denormalize_bboxes(gt_boxes, height, width)
     # Randomly expand image and adjust bounding boxes
     img, denormalized_gt_boxes, height, width = randomly_apply_operation(expand_image, img, denormalized_gt_boxes, height, width)
+    # Generate random patches
+    patches = generate_random_patches(height, width)
+    # Calculate jaccard/iou value for each bounding box
+    iou_map = helpers.generate_iou_map(patches, denormalized_gt_boxes, transpose_perm=[1, 0])
+    # Check each ground truth box center in the generated patch and return a boolean condition list
+    center_in_patch_condition = get_center_in_patch_condition(patches, denormalized_gt_boxes)
     # Get random minimum overlap value
     min_overlap = get_random_min_overlap()
-    # while loop start
-    cond = lambda has_valid_patch, counter, data: tf.logical_and(tf.logical_not(has_valid_patch), tf.less(counter, 10))
-    body = lambda has_valid_patch, counter, data: generate_and_apply_random_patch(img, denormalized_gt_boxes, height, width, min_overlap, counter)
-    _,_, (img, denormalized_gt_boxes, height, width) = tf.while_loop(cond, body, [tf.constant(False, tf.bool), tf.constant(0, tf.int32), (img, denormalized_gt_boxes, height, width)])
-    # while loop end
+    # Check and merge center condition and minimum intersection condition
+    valid_patch_condition = tf.logical_and(center_in_patch_condition, iou_map > min_overlap)
+    # Check at least one valid patch then apply patch
+    img, denormalized_gt_boxes, height, width = tf.cond(tf.reduce_any(valid_patch_condition),
+        lambda: select_and_apply_patch(img, denormalized_gt_boxes, patches, valid_patch_condition, center_in_patch_condition),
+        lambda: (img, denormalized_gt_boxes, height, width)
+    )
+    # Finally normalized ground truth boxes
     gt_boxes = helpers.normalize_bboxes(denormalized_gt_boxes, height, width)
     gt_boxes = tf.clip_by_value(gt_boxes, 0, 1)
+    #
     return img, gt_boxes
-
-##############################################################################
-## Sample patch end
-##############################################################################
