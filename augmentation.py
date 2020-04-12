@@ -29,7 +29,7 @@ def get_random_bool():
     outputs:
         random boolean 0d tensor
     """
-    return tf.random.uniform((), dtype=tf.float32) > 0.5
+    return tf.greater(tf.random.uniform((), dtype=tf.float32), 0.5)
 
 def randomly_apply_operation(operation, img, gt_boxes, *args):
     """Randomly applying given method to image and ground truth boxes.
@@ -178,8 +178,8 @@ def get_center_in_patch_condition(patch, gt_boxes):
     """
     gt_center_x, gt_center_y = get_centers_of_bboxes(gt_boxes)
     patch_y1, patch_x1, patch_y2, patch_x2 = tf.split(patch, 4, axis=-1)
-    center_x_in_patch = tf.logical_and(gt_center_x >= patch_x1, gt_center_x <= patch_x2)
-    center_y_in_patch = tf.logical_and(gt_center_y >= patch_y1, gt_center_y <= patch_y2)
+    center_x_in_patch = tf.logical_and(tf.greater(gt_center_x, patch_x1), tf.less(gt_center_x, patch_x2))
+    center_y_in_patch = tf.logical_and(tf.greater(gt_center_y, patch_y1), tf.less(gt_center_y, patch_y2))
     center_in_patch = tf.logical_and(center_x_in_patch, center_y_in_patch)
     return center_in_patch
 
@@ -214,13 +214,15 @@ def generate_random_patches(height, width):
     outputs:
         patches = (number_of_valid_patches, [y1, x1, y2, x2])
     """
-    coords = tf.random.uniform((1000, 4), minval=0.1, maxval=1., dtype=tf.float32)
+    min_aspect_ratio = tf.constant(0.5, dtype=tf.float32)
+    max_aspect_ratio = tf.constant(2.0, dtype=tf.float32)
+    coords = tf.random.uniform((1000, 4), minval=0., maxval=1., dtype=tf.float32)
     coords = tf.round(coords * [height, width, height, width])
     h = coords[..., 2] - coords[..., 0]
     w = coords[..., 3] - coords[..., 1]
     hw_ratio = h / w
-    pos_cond = tf.logical_and(h > 0.0, w > 0.0)
-    aspect_ratio_cond = tf.logical_and(hw_ratio > 0.5, hw_ratio < 2.0)
+    pos_cond = tf.logical_and(tf.greater(h, 0.0), tf.greater(w, 0.0))
+    aspect_ratio_cond = tf.logical_and(tf.greater(hw_ratio, min_aspect_ratio), tf.less(hw_ratio, max_aspect_ratio))
     valid_cond = tf.logical_and(pos_cond, aspect_ratio_cond)
     return coords[valid_cond]
 
@@ -283,7 +285,7 @@ def patch(img, gt_boxes):
     # Get random minimum overlap value
     min_overlap = get_random_min_overlap()
     # Check and merge center condition and minimum intersection condition
-    valid_patch_condition = tf.logical_and(center_in_patch_condition, iou_map > min_overlap)
+    valid_patch_condition = tf.logical_and(center_in_patch_condition, tf.greater(iou_map, min_overlap))
     # Check at least one valid patch then apply patch
     img, denormalized_gt_boxes, height, width = tf.cond(tf.reduce_any(valid_patch_condition),
         lambda: select_and_apply_patch(img, denormalized_gt_boxes, patches, valid_patch_condition, center_in_patch_condition),

@@ -24,7 +24,7 @@ class CustomLoss(object):
         loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.NONE)
         loc_loss_for_all = loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas)
         # After tf 2.2.0 version, the huber calculates mean over the last axis
-        loc_loss_for_all = tf.cond(tf.rank(loc_loss_for_all) > tf.constant(2),
+        loc_loss_for_all = tf.cond(tf.greater(tf.rank(loc_loss_for_all), tf.constant(2)),
                                    lambda: tf.reduce_sum(loc_loss_for_all, axis=-1),
                                    lambda: loc_loss_for_all * tf.constant(4.0, dtype=tf.float32))
         #
@@ -60,7 +60,7 @@ class CustomLoss(object):
         masked_loss = conf_loss_for_all * actual_labels[..., 0]
         sorted_loss = tf.argsort(masked_loss, direction="DESCENDING")
         sorted_loss = tf.argsort(sorted_loss)
-        neg_cond = sorted_loss < tf.expand_dims(total_neg_bboxes, axis=1)
+        neg_cond = tf.less(sorted_loss, tf.expand_dims(total_neg_bboxes, axis=1))
         neg_mask = tf.cast(neg_cond, dtype=tf.float32)
         #
         final_mask = pos_mask + neg_mask

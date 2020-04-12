@@ -28,9 +28,9 @@ def scheduler(epoch):
     outputs:
         learning_rate = float learning rate value
     """
-    if epoch < 60:
+    if epoch < 100:
         return 1e-3
-    elif epoch < 100:
+    elif epoch < 150:
         return 1e-4
     else:
         return 1e-5
