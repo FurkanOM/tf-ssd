@@ -143,9 +143,10 @@ def get_model(hyper_params):
     outputs:
         ssd_model = tf.keras.model
     """
-    # Initial scale factor 20 in the paper. However, such a large initial
-    # scale value may in some cases cause the network to yield NaN results.
-    scale_factor = 5.0
+    # Initial scale factor 20 in the paper.
+    # Even if this scale factor could cause loss value to be NaN in some of the cases,
+    # it was decided to remain the same after some tests.
+    scale_factor = 20.0
     reg_factor = 5e-4
     total_labels = hyper_params["total_labels"]
     # +1 for ratio 1
