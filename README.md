@@ -32,11 +32,12 @@ python trainer.py -handle-gpu
 
 Trained model weights [ssd300_model_weights.h5](https://drive.google.com/open?id=1w_gq3WeqIveAyj4TD_09Oy6R5SJVt_hI) (~105 MB)
 
-![Man with a motorbike](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_motorbike.png)
-Photo by Harley-Davidson on Unsplash
-
-![Man with a dog](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_dog_cars.png)
-Photo by Sebastian Herrmann on Unsplash
+| |
+| -------------- |
+| ![Man with a motorbike](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_motorbike.png) |
+| Photo by Harley-Davidson on Unsplash |
+| ![Man with a dog](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_dog_cars.png) |
+| Photo by Sebastian Herrmann on Unsplash |
 
 ### References
 
