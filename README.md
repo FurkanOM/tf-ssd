@@ -30,9 +30,9 @@ python trainer.py -handle-gpu
 
 ## Trained Model and Examples
 
-Trained with VOC 0712 trainval model weights [ssd300_model_weights.h5](https://drive.google.com/open?id=1w_gq3WeqIveAyj4TD_09Oy6R5SJVt_hI) (~105 MB)
+Trained model weights with VOC 0712 trainval data [ssd300_model_weights.h5](https://drive.google.com/open?id=1w_gq3WeqIveAyj4TD_09Oy6R5SJVt_hI) (~105 MB)
 
-| Trained model with VOC 0712 trainval data |
+| Trained with VOC 0712 trainval data |
 | -------------- |
 | ![Man with a motorbike](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_motorbike.png) |
 | Photo by Harley-Davidson on Unsplash |
