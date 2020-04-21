@@ -30,7 +30,7 @@ python trainer.py -handle-gpu
 
 ## Trained Model and Examples
 
-Trained model weights with VOC 0712 trainval data [ssd300_model_weights.h5](https://drive.google.com/open?id=1w_gq3WeqIveAyj4TD_09Oy6R5SJVt_hI) (~105 MB)
+Trained with VOC 0712 trainval model weights [ssd300_model_weights.h5](https://drive.google.com/open?id=1w_gq3WeqIveAyj4TD_09Oy6R5SJVt_hI) (~105 MB)
 
 | Trained with VOC 0712 trainval data |
 | -------------- |
@@ -41,6 +41,8 @@ Trained model weights with VOC 0712 trainval data [ssd300_model_weights.h5](http
 
 ### References
 
+* VOC 2007 Dataset [[dataset]](http://www.pascal-network.org/challenges/VOC/voc2007/workshop/index.html)
+* VOC 2012 Dataset [[dataset]](http://www.pascal-network.org/challenges/VOC/voc2012/workshop/index.html)
 * SSD: Single Shot MultiBox Detector [[paper]](https://arxiv.org/abs/1512.02325)
 * Original caffe implementation [[code]](https://github.com/weiliu89/caffe/tree/ssd)
 * ParseNet: Looking Wider to See Better [[paper]](https://arxiv.org/abs/1506.04579)
