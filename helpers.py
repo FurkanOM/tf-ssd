@@ -87,7 +87,7 @@ def get_padded_batch_params():
         padding_values = padding values with dtypes for (images, ground truth boxes, labels)
     """
     padded_shapes = ([None, None, None], [None, None], [None,])
-    padding_values = (tf.constant(0, tf.uint8), tf.constant(0, tf.float32), tf.constant(-1, tf.int32))
+    padding_values = (tf.constant(0, tf.float32), tf.constant(0, tf.float32), tf.constant(-1, tf.int32))
     return padded_shapes, padding_values
 
 def get_dataset(name, split, data_dir="~/tensorflow_datasets"):
@@ -161,6 +161,7 @@ def get_image_data_from_folder(custom_image_path, final_height, final_width):
             image = Image.open(img_path)
             resized_image = image.resize((final_width, final_height), Image.LANCZOS)
             img = tf.expand_dims(array_from_img(resized_image), 0)
+            img = tf.image.convert_image_dtype(img, tf.float32)
             image_data.append((img, None, None))
         break
     return image_data
@@ -180,9 +181,11 @@ def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
     img = image_data["image"]
     gt_boxes = image_data["objects"]["bbox"]
     gt_labels = tf.cast(image_data["objects"]["label"] + 1, tf.int32)
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    img = resize_image(img, final_height, final_width)
     if augmentation_fn:
         img, gt_boxes = augmentation_fn(img, gt_boxes)
-    img = resize_image(img, final_height, final_width)
+        img = resize_image(img, final_height, final_width)
     return img, gt_boxes, gt_labels
 
 def non_max_suppression(pred_bboxes, pred_labels, **kwargs):
@@ -356,8 +359,7 @@ def resize_image(img, final_height, final_width):
     outputs:
         resized_img = (final_height, final_width, channels)
     """
-    resized_img = tf.image.resize(tf.image.convert_image_dtype(img, tf.float32), (final_height, final_width))
-    return tf.image.convert_image_dtype(resized_img, tf.uint8)
+    return tf.image.resize(img, (final_height, final_width))
 
 def img_from_array(array):
     """Getting pillow image object from numpy array.

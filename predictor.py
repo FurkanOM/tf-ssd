@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow.keras.applications.vgg16 import preprocess_input
 import helpers
 import ssd
 
@@ -38,9 +37,7 @@ bg_id = labels.index(background_label)
 
 for image_data in VOC_test_data:
     img, _, _ = image_data
-    input_img = preprocess_input(img)
-    input_img = tf.image.convert_image_dtype(input_img, tf.float32)
-    pred_bbox_deltas, pred_labels = ssd_model.predict_on_batch(input_img)
+    pred_bbox_deltas, pred_labels = ssd_model.predict_on_batch(img)
     #
     pred_bbox_deltas *= hyper_params["variances"]
     pred_bboxes = helpers.get_bboxes_from_deltas(prior_boxes, pred_bbox_deltas)

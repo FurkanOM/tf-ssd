@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from tensorflow.keras.layers import Layer, Input, Conv2D, MaxPool2D, Activation
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.regularizers import l2
@@ -329,10 +328,8 @@ def generator(dataset, prior_boxes, hyper_params):
     while True:
         for image_data in dataset:
             img, gt_boxes, gt_labels = image_data
-            input_img = preprocess_input(img)
-            input_img = tf.image.convert_image_dtype(input_img, tf.float32)
             actual_bbox_deltas, actual_labels = calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
-            yield input_img, (actual_bbox_deltas, actual_labels)
+            yield img, (actual_bbox_deltas, actual_labels)
 
 def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     """Calculate ssd actual output values.
