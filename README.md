@@ -1,6 +1,6 @@
 # Single Shot MultiBox Detector
 
-Tensorflow SSD implementation from scratch.
+Tensorflow SSD implementation from scratch. [MobileNetV2](https://www.tensorflow.org/api_docs/python/tf/keras/applications/MobileNetV2) and [VGG16](https://www.tensorflow.org/api_docs/python/tf/keras/applications/VGG16) backbones are supported.
 
 It's implemented and tested with **tensorflow 2.0, 2.1, and 2.2**
 
@@ -15,11 +15,14 @@ To create virtual environment (tensorflow-2 gpu environment):
 conda env create -f environment.yml
 ```
 
+There are two different backbone, first one the legacy **vgg16** backbone and the second and default one is **mobilenet_v2**.
+You can easily specify the backbone to be used with the **--backbone** parameter.
+
 To train and test SSD model:
 
 ```sh
-python trainer.py
-python predictor.py
+python trainer.py --backbone mobilenet_v2
+python predictor.py --backbone vgg16
 ```
 
 If you have GPU issues you can use **-handle-gpu** flag with these commands:
@@ -30,14 +33,23 @@ python trainer.py -handle-gpu
 
 ## Trained Model and Examples
 
-Trained with VOC 0712 trainval model weights [ssd300_model_weights.h5](https://drive.google.com/open?id=1w_gq3WeqIveAyj4TD_09Oy6R5SJVt_hI) (~105 MB)
+Trained with VOC 0712 trainval
 
-| Trained with VOC 0712 trainval data |
-| -------------- |
-| ![Man with a motorbike](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_motorbike.png) |
-| Photo by Harley-Davidson on Unsplash |
-| ![Man with a dog](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_dog_cars.png) |
-| Photo by Sebastian Herrmann on Unsplash |
+Training and validation loss with MobileNetV2 backbone:
+
+![Training and validation loss](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/epoch_loss.png)
+
+Model weights:
+
+* [ssd_mobilenet_v2_model_weights.h5](https://drive.google.com/open?id=1dLhuqIx9HoOtPSqCQlhbts7CjlXa5lCs) (~35 MB)
+* [ssd_vgg16_model_weights.h5](https://drive.google.com/open?id=1M-kvXTpwIguTfUVxFpt4DTMRuVhgumyJ) (~105 MB)
+
+| Trained with VOC 0712 trainval data with VGG16 backbone | Trained with VOC 0712 trainval data with MobileNetV2 backbone |
+| -------------- | -------------- |
+| ![Man with a motorbike](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_motorbike.png) | ![Horses](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/ssd_mobilenet_v2_horses.png) |
+| Photo by Harley-Davidson on Unsplash | Photo by Mark Neal on Unsplash |
+| ![Man with a dog](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/man_dog_cars.png) | ![Airplanes](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/ssd_mobilenet_v2_air_planes.png) |
+| Photo by Sebastian Herrmann on Unsplash | Photo by Vishu Gowda on Unsplash |
 
 ### References
 

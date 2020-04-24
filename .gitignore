@@ -1,4 +1,4 @@
 __pycache__
 data/*
-models/*
+trained_models/*
 logs/*

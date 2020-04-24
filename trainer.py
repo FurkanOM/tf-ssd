@@ -4,18 +4,26 @@ from tensorflow.keras.optimizers import SGD, Adam
 import helpers
 import augmentation
 import ssd
+from ssd_loss import CustomLoss
 
 args = helpers.handle_args()
 if args.handle_gpu:
     helpers.handle_gpu_compatibility()
 
-batch_size = 32
+batch_size = 8
 epochs = 150
 load_weights = False
 with_voc2012 = True
-ssd_type = "ssd300"
-hyper_params = helpers.get_hyper_params(ssd_type)
-
+backbone = args.backbone
+#
+assert backbone in ["mobilenet_v2", "vgg16"]
+if backbone == "mobilenet_v2":
+    from models.ssd_mobilenet_v2 import get_model, init_model
+else:
+    from models.ssd_vgg16 import get_model, init_model
+#
+hyper_params = helpers.get_hyper_params(backbone)
+#
 VOC_train_data, VOC_info = helpers.get_dataset("voc/2007", "train+validation")
 VOC_val_data, _ = helpers.get_dataset("voc/2007", "test")
 VOC_train_total_items = helpers.get_total_item_size(VOC_info, "train+validation")
@@ -32,7 +40,7 @@ step_size_val = helpers.get_step_size(VOC_val_total_items, batch_size)
 labels = helpers.get_labels(VOC_info)
 # We add 1 class for background
 hyper_params["total_labels"] = len(labels) + 1
-img_size = helpers.SSD[ssd_type]["img_size"]
+img_size = hyper_params["img_size"]
 
 VOC_train_data = VOC_train_data.map(lambda x : helpers.preprocessing(x, img_size, img_size, augmentation.apply))
 VOC_val_data = VOC_val_data.map(lambda x : helpers.preprocessing(x, img_size, img_size))
@@ -41,16 +49,16 @@ padded_shapes, padding_values = helpers.get_padded_batch_params()
 VOC_train_data = VOC_train_data.shuffle(batch_size*4).padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
 VOC_val_data = VOC_val_data.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
 #
-ssd_model = ssd.get_model(hyper_params)
-ssd_loss = ssd.CustomLoss(hyper_params["neg_pos_ratio"], hyper_params["loc_loss_alpha"])
-ssd_model.compile(optimizer=SGD(learning_rate=1e-3),
-                  loss=[ssd_loss.loc_loss_fn, ssd_loss.conf_loss_fn])
-ssd.init_model(ssd_model)
+ssd_model = get_model(hyper_params)
+ssd_custom_losses = CustomLoss(hyper_params["neg_pos_ratio"], hyper_params["loc_loss_alpha"])
+ssd_model.compile(optimizer=Adam(learning_rate=1e-3),
+                  loss=[ssd_custom_losses.loc_loss_fn, ssd_custom_losses.conf_loss_fn])
+init_model(ssd_model)
 #
-ssd_model_path = helpers.get_model_path(ssd_type)
+ssd_model_path = helpers.get_model_path(backbone)
 if load_weights:
     ssd_model.load_weights(ssd_model_path)
-ssd_log_path = helpers.get_log_path(ssd_type)
+ssd_log_path = helpers.get_log_path(backbone)
 # We calculate prior boxes for one time and use it for all operations because of the all images are the same sizes
 prior_boxes = ssd.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
 ssd_train_feed = ssd.generator(VOC_train_data, prior_boxes, hyper_params)

@@ -8,9 +8,19 @@ import numpy as np
 from datetime import datetime
 
 SSD = {
-    "ssd300": {
+    "vgg16": {
         "img_size": 300,
         "feature_map_shapes": [38, 19, 10, 5, 3, 1],
+        "aspect_ratios": [[1., 2., 1./2.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2.],
+                         [1., 2., 1./2.]],
+    },
+    "mobilenet_v2": {
+        "img_size": 300,
+        "feature_map_shapes": [19, 10, 5, 3, 2, 1],
         "aspect_ratios": [[1., 2., 1./2.],
                          [1., 2., 1./2., 3., 1./3.],
                          [1., 2., 1./2., 3., 1./3.],
@@ -38,30 +48,29 @@ def scheduler(epoch):
 def get_log_path(model_type, custom_postfix=""):
     """Generating log path from model_type value for tensorboard.
     inputs:
-        model_type = "ssd300"
+        model_type = "mobilenet_v2"
         custom_postfix = any custom string for log folder name
 
     outputs:
-        log_path = tensorboard log path, for example: "logs/ssd300/{date}"
+        log_path = tensorboard log path, for example: "logs/mobilenet_v2/{date}"
     """
     return "logs/{}{}/{}".format(model_type, custom_postfix, datetime.now().strftime("%Y%m%d-%H%M%S"))
-
 
 def get_model_path(model_type):
     """Generating model path from model_type value for save/load model weights.
     inputs:
-        model_type = "ssd300"
+        model_type = "vgg16", "mobilenet_v2"
 
     outputs:
-        model_path = os model path, for example: "models/ssd300_model_weights.h5"
+        model_path = os model path, for example: "trained_models/ssd_vgg16_model_weights.h5"
     """
-    main_path = "models"
+    main_path = "trained_models"
     if not os.path.exists(main_path):
         os.makedirs(main_path)
-    model_path = os.path.join(main_path, "{0}_model_weights.h5".format(model_type))
+    model_path = os.path.join(main_path, "ssd_{}_model_weights.h5".format(model_type))
     return model_path
 
-def get_hyper_params(ssd_type, **kwargs):
+def get_hyper_params(backbone, **kwargs):
     """Generating hyper params in a dynamic way.
     inputs:
         **kwargs = any value could be updated in the hyper_params
@@ -69,7 +78,7 @@ def get_hyper_params(ssd_type, **kwargs):
     outputs:
         hyper_params = dictionary
     """
-    hyper_params = SSD[ssd_type]
+    hyper_params = SSD[backbone]
     hyper_params["iou_threshold"] = 0.5
     hyper_params["neg_pos_ratio"] = 3
     hyper_params["loc_loss_alpha"] = 1
@@ -464,6 +473,10 @@ def handle_args():
     """
     parser = argparse.ArgumentParser(description="SSD: Single Shot MultiBox Detector Implementation")
     parser.add_argument("-handle-gpu", action="store_true", help="Tensorflow 2 GPU compatibility flag")
+    parser.add_argument("--backbone", required=False,
+                        default="mobilenet_v2",
+                        metavar="['mobilenet_v2', 'vgg16']",
+                        help="Which backbone used for the ssd")
     args = parser.parse_args()
     return args
 
