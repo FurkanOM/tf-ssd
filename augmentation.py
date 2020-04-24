@@ -1,5 +1,5 @@
 import tensorflow as tf
-import helpers
+import bbox_utils
 
 def apply(img, gt_boxes):
     """Randomly applying data augmentation methods to image and ground truth boxes.
@@ -273,13 +273,13 @@ def patch(img, gt_boxes):
     img_shape = tf.shape(img)
     height, width = tf.cast(img_shape[0], tf.float32), tf.cast(img_shape[1], tf.float32)
     # Denormalizing bounding boxes for further operations
-    denormalized_gt_boxes = helpers.denormalize_bboxes(gt_boxes, height, width)
+    denormalized_gt_boxes = bbox_utils.denormalize_bboxes(gt_boxes, height, width)
     # Randomly expand image and adjust bounding boxes
     img, denormalized_gt_boxes, height, width = randomly_apply_operation(expand_image, img, denormalized_gt_boxes, height, width)
     # Generate random patches
     patches = generate_random_patches(height, width)
     # Calculate jaccard/iou value for each bounding box
-    iou_map = helpers.generate_iou_map(patches, denormalized_gt_boxes, transpose_perm=[1, 0])
+    iou_map = bbox_utils.generate_iou_map(patches, denormalized_gt_boxes, transpose_perm=[1, 0])
     # Check each ground truth box center in the generated patch and return a boolean condition list
     center_in_patch_condition = get_center_in_patch_condition(patches, denormalized_gt_boxes)
     # Get random minimum overlap value
@@ -292,7 +292,7 @@ def patch(img, gt_boxes):
         lambda: (img, denormalized_gt_boxes, height, width)
     )
     # Finally normalized ground truth boxes
-    gt_boxes = helpers.normalize_bboxes(denormalized_gt_boxes, height, width)
+    gt_boxes = bbox_utils.normalize_bboxes(denormalized_gt_boxes, height, width)
     gt_boxes = tf.clip_by_value(gt_boxes, 0, 1)
     #
     return img, gt_boxes

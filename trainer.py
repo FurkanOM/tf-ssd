@@ -3,8 +3,9 @@ from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, LearningRat
 from tensorflow.keras.optimizers import SGD, Adam
 import helpers
 import augmentation
-import ssd
 from ssd_loss import CustomLoss
+from training_utils import generator
+from bbox_utils import generate_prior_boxes
 
 args = helpers.handle_args()
 if args.handle_gpu:
@@ -60,9 +61,9 @@ if load_weights:
     ssd_model.load_weights(ssd_model_path)
 ssd_log_path = helpers.get_log_path(backbone)
 # We calculate prior boxes for one time and use it for all operations because of the all images are the same sizes
-prior_boxes = ssd.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
-ssd_train_feed = ssd.generator(VOC_train_data, prior_boxes, hyper_params)
-ssd_val_feed = ssd.generator(VOC_val_data, prior_boxes, hyper_params)
+prior_boxes = generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
+ssd_train_feed = generator(VOC_train_data, prior_boxes, hyper_params)
+ssd_val_feed = generator(VOC_val_data, prior_boxes, hyper_params)
 
 checkpoint_callback = ModelCheckpoint(ssd_model_path, monitor="val_loss", save_best_only=True, save_weights_only=True)
 tensorboard_callback = TensorBoard(log_dir=ssd_log_path)

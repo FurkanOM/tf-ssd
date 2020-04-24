@@ -1,6 +1,6 @@
 import tensorflow as tf
 import helpers
-import ssd
+import bbox_utils
 
 args = helpers.handle_args()
 if args.handle_gpu:
@@ -36,7 +36,7 @@ ssd_model = get_model(hyper_params)
 ssd_model_path = helpers.get_model_path(backbone)
 ssd_model.load_weights(ssd_model_path)
 
-prior_boxes = ssd.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
+prior_boxes = bbox_utils.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
 
 background_label = "bg"
 labels = [background_label] + labels
@@ -47,7 +47,7 @@ for image_data in VOC_test_data:
     pred_bbox_deltas, pred_labels = ssd_model.predict_on_batch(img)
     #
     pred_bbox_deltas *= hyper_params["variances"]
-    pred_bboxes = helpers.get_bboxes_from_deltas(prior_boxes, pred_bbox_deltas)
+    pred_bboxes = bbox_utils.get_bboxes_from_deltas(prior_boxes, pred_bbox_deltas)
     pred_bboxes = tf.clip_by_value(pred_bboxes, 0, 1)
     #
     pred_labels = tf.cast(pred_labels, tf.float32)
@@ -59,7 +59,7 @@ for image_data in VOC_test_data:
     valid_bboxes = tf.expand_dims(reshaped_pred_bboxes[valid_cond], 0)
     valid_labels = tf.expand_dims(pred_labels[valid_cond], 0)
     #
-    nms_bboxes, nmsed_scores, nmsed_classes, valid_detections = helpers.non_max_suppression(valid_bboxes, valid_labels,
-                                                                                            max_output_size_per_class=10,
-                                                                                            max_total_size=200, score_threshold=0.5)
+    nms_bboxes, nmsed_scores, nmsed_classes, valid_detections = bbox_utils.non_max_suppression(valid_bboxes, valid_labels,
+                                                                                               max_output_size_per_class=10,
+                                                                                               max_total_size=200, score_threshold=0.5)
     helpers.draw_bboxes_with_labels(img[0], nms_bboxes[0], nmsed_classes[0], nmsed_scores[0], labels)

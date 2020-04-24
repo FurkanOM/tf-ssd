@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import Layer, Input, Conv2D, MaxPool2D
 from tensorflow.keras.models import Model
 from tensorflow.keras.regularizers import l2
-from .commons import get_head_from_outputs
+from .header import get_head_from_outputs
 
 class L2Normalization(Layer):
     """Normalizing different scale features for fusion.
