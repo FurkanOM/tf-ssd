@@ -41,7 +41,7 @@ class HeadWrapper(Layer):
         return tf.concat(outputs, axis=1)
 
 def get_head_from_outputs(hyper_params, outputs):
-    """Generating ssd model for hyper params.
+    """Generating ssd bbox delta and label heads.
     inputs:
         hyper_params = dictionary
         outputs = list of ssd layers output to be used for prediction

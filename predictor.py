@@ -7,7 +7,7 @@ if args.handle_gpu:
     helpers.handle_gpu_compatibility()
 
 batch_size = 1
-use_custom_images = True
+use_custom_images = False
 custom_image_path = "data/images/"
 backbone = args.backbone
 assert backbone in ["mobilenet_v2", "vgg16"]
