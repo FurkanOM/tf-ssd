@@ -56,6 +56,7 @@ Model weights:
 * VOC 2007 Dataset [[dataset]](http://www.pascal-network.org/challenges/VOC/voc2007/workshop/index.html)
 * VOC 2012 Dataset [[dataset]](http://www.pascal-network.org/challenges/VOC/voc2012/workshop/index.html)
 * SSD: Single Shot MultiBox Detector [[paper]](https://arxiv.org/abs/1512.02325)
+* MobileNetV2: Inverted Residuals and Linear Bottlenecks [[paper]](https://arxiv.org/abs/1801.04381)
 * Original caffe implementation [[code]](https://github.com/weiliu89/caffe/tree/ssd)
 * ParseNet: Looking Wider to See Better [[paper]](https://arxiv.org/abs/1506.04579)
 * AutoAugment: Learning Augmentation Policies from Data [[paper]](https://arxiv.org/abs/1805.09501)
