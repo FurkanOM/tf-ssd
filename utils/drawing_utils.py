@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
 
@@ -35,7 +34,7 @@ def draw_bboxes(img, bboxes):
         bboxes = (batch_size, total_bboxes, [y1, x1, y2, x2])
             in normalized form [0, 1]
     """
-    colors = tf.cast(np.array([[1, 0, 0, 1]] * 10), dtype=tf.float32)
+    colors = tf.constant([[1, 0, 0, 1]], dtype=tf.float32)
     img_with_bounding_boxes = tf.image.draw_bounding_boxes(
         img,
         bboxes,
@@ -55,20 +54,18 @@ def draw_bboxes_with_labels(img, bboxes, label_indices, probs, labels):
         probs = (total_bboxes)
         labels = [labels string list]
     """
-    colors = []
-    for i in range(len(labels)):
-        colors.append(tuple(np.random.choice(range(256), size=4)))
+    colors = tf.random.uniform((len(labels), 4), maxval=256, dtype=tf.int32)
     image = tf.keras.preprocessing.image.array_to_img(img)
     width, height = image.size
     draw = ImageDraw.Draw(image)
     for index, bbox in enumerate(bboxes):
-        y1, x1, y2, x2 = np.split(bbox, 4)
+        y1, x1, y2, x2 = tf.split(bbox, 4)
         width = x2 - x1
         height = y2 - y1
         if width <= 0 or height <= 0:
             continue
         label_index = int(label_indices[index])
-        color = colors[label_index]
+        color = tuple(colors[label_index].numpy())
         label_text = "{0} {1:0.3f}".format(labels[label_index], probs[index])
         draw.text((x1 + 4, y1 + 2), label_text, fill=color)
         draw.rectangle((x1, y1, x2, y2), outline=color, width=3)
