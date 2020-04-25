@@ -1,5 +1,5 @@
 import tensorflow as tf
-import bbox_utils
+from utils import bbox_utils
 
 def apply(img, gt_boxes):
     """Randomly applying data augmentation methods to image and ground truth boxes.

@@ -1,5 +1,74 @@
 import tensorflow as tf
-import bbox_utils
+import math
+from . import bbox_utils
+
+SSD = {
+    "vgg16": {
+        "img_size": 300,
+        "feature_map_shapes": [38, 19, 10, 5, 3, 1],
+        "aspect_ratios": [[1., 2., 1./2.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2.],
+                         [1., 2., 1./2.]],
+    },
+    "mobilenet_v2": {
+        "img_size": 300,
+        "feature_map_shapes": [19, 10, 5, 3, 2, 1],
+        "aspect_ratios": [[1., 2., 1./2.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2., 3., 1./3.],
+                         [1., 2., 1./2.],
+                         [1., 2., 1./2.]],
+    }
+}
+
+def get_hyper_params(backbone, **kwargs):
+    """Generating hyper params in a dynamic way.
+    inputs:
+        **kwargs = any value could be updated in the hyper_params
+
+    outputs:
+        hyper_params = dictionary
+    """
+    hyper_params = SSD[backbone]
+    hyper_params["iou_threshold"] = 0.5
+    hyper_params["neg_pos_ratio"] = 3
+    hyper_params["loc_loss_alpha"] = 1
+    hyper_params["variances"] = [0.1, 0.1, 0.2, 0.2]
+    for key, value in kwargs.items():
+        if key in hyper_params and value:
+            hyper_params[key] = value
+    #
+    return hyper_params
+
+def scheduler(epoch):
+    """Generating learning rate value for a given epoch.
+    inputs:
+        epoch = number of current epoch
+
+    outputs:
+        learning_rate = float learning rate value
+    """
+    if epoch < 80:
+        return 1e-3
+    elif epoch < 120:
+        return 1e-4
+    else:
+        return 1e-5
+
+def get_step_size(total_items, batch_size):
+    """Get step size for given total item size and batch size.
+    inputs:
+        total_items = number of total items
+        batch_size = number of batch size during training or validation
+
+    outputs:
+        step_size = number of step size for model training
+    """
+    return math.ceil(total_items / batch_size)
 
 def generator(dataset, prior_boxes, hyper_params):
     """Tensorflow data generator for fit method, yielding inputs and outputs.

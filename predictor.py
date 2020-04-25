@@ -1,39 +1,38 @@
 import tensorflow as tf
-import helpers
-import bbox_utils
+from utils import bbox_utils, data_utils, drawing_utils, io_utils, train_utils
 
-args = helpers.handle_args()
+args = io_utils.handle_args()
 if args.handle_gpu:
-    helpers.handle_gpu_compatibility()
+    io_utils.handle_gpu_compatibility()
 
 batch_size = 1
 use_custom_images = False
 custom_image_path = "data/images/"
 backbone = args.backbone
-assert backbone in ["mobilenet_v2", "vgg16"]
+io_utils.is_valid_backbone(backbone)
 #
 if backbone == "mobilenet_v2":
     from models.ssd_mobilenet_v2 import get_model, init_model
 else:
     from models.ssd_vgg16 import get_model, init_model
 #
-hyper_params = helpers.get_hyper_params(backbone)
+hyper_params = train_utils.get_hyper_params(backbone)
 #
-VOC_test_data, VOC_info = helpers.get_dataset("voc/2007", "test")
-labels = helpers.get_labels(VOC_info)
+VOC_test_data, VOC_info = data_utils.get_dataset("voc/2007", "test")
+labels = data_utils.get_labels(VOC_info)
 # We add 1 class for background
 hyper_params["total_labels"] = len(labels) + 1
 img_size = hyper_params["img_size"]
 
 if use_custom_images:
-    VOC_test_data = helpers.get_image_data_from_folder(custom_image_path, img_size, img_size)
+    VOC_test_data = data_utils.get_image_data_from_folder(custom_image_path, img_size, img_size)
 else:
-    VOC_test_data = VOC_test_data.map(lambda x : helpers.preprocessing(x, img_size, img_size))
-    padded_shapes, padding_values = helpers.get_padded_batch_params()
+    VOC_test_data = VOC_test_data.map(lambda x : data_utils.preprocessing(x, img_size, img_size))
+    padded_shapes, padding_values = data_utils.get_padded_batch_params()
     VOC_test_data = VOC_test_data.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
 
 ssd_model = get_model(hyper_params)
-ssd_model_path = helpers.get_model_path(backbone)
+ssd_model_path = io_utils.get_model_path(backbone)
 ssd_model.load_weights(ssd_model_path)
 
 prior_boxes = bbox_utils.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
@@ -62,4 +61,5 @@ for image_data in VOC_test_data:
     nms_bboxes, nmsed_scores, nmsed_classes, valid_detections = bbox_utils.non_max_suppression(valid_bboxes, valid_labels,
                                                                                                max_output_size_per_class=10,
                                                                                                max_total_size=200, score_threshold=0.5)
-    helpers.draw_bboxes_with_labels(img[0], nms_bboxes[0], nmsed_classes[0], nmsed_scores[0], labels)
+    denormalized_bboxes = bbox_utils.denormalize_bboxes(nms_bboxes[0], img_size, img_size)
+    drawing_utils.draw_bboxes_with_labels(img[0], denormalized_bboxes, nmsed_classes[0], nmsed_scores[0], labels)
