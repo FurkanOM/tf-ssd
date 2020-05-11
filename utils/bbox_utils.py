@@ -124,48 +124,28 @@ def get_scale_for_nth_feature_map(k, m=6, scale_min=0.2, scale_max=0.9):
     """
     return scale_min + ((scale_max - scale_min) / (m - 1)) * (k - 1)
 
-def get_height_width_pairs(aspect_ratios, feature_map_index, total_feature_map):
-    """Generating height and width pairs for different aspect ratios and feature map shapes.
+def generate_base_prior_boxes(aspect_ratios, feature_map_index, total_feature_map):
+    """Generating top left prior boxes for given stride, height and width pairs of different aspect ratios.
+    These prior boxes same with the anchors in Faster-RCNN.
     inputs:
         aspect_ratios = for all feature map shapes + 1 for ratio 1
         feature_map_index = nth feature maps for scale calculation
         total_feature_map = length of all using feature map for detections, 6 for ssd300
 
     outputs:
-        height_width_pairs = [(height1, width1), ..., (heightN, widthN)]
+        base_prior_boxes = (prior_box_count, [y1, x1, y2, x2])
     """
     current_scale = get_scale_for_nth_feature_map(feature_map_index, m=total_feature_map)
     next_scale = get_scale_for_nth_feature_map(feature_map_index + 1, m=total_feature_map)
-    height_width_pairs = []
-    for aspect_ratio in aspect_ratios:
-        height = current_scale / np.sqrt(aspect_ratio)
-        width = current_scale * np.sqrt(aspect_ratio)
-        height_width_pairs.append((height, width))
-    # 1 extra pair for ratio 1
-    height = width = np.sqrt(current_scale * next_scale)
-    height_width_pairs.append((height, width))
-    return height_width_pairs
-
-def generate_base_prior_boxes(stride, height_width_pairs):
-    """Generating top left prior boxes for given stride, height and width pairs of different aspect ratios.
-    These prior boxes same with the anchors in Faster-RCNN.
-    inputs:
-        stride = step size
-        height_width_pairs = [(height1, width1), ..., (heightN, widthN)]
-
-    outputs:
-        base_prior_boxes = (prior_box_count, [y1, x1, y2, x2])
-    """
-    center = stride / 2
     base_prior_boxes = []
-    for height_width in height_width_pairs:
-        height, width = height_width
-        x_min = center - width / 2
-        y_min = center - height / 2
-        x_max = center + width / 2
-        y_max = center + height / 2
-        base_prior_boxes.append([y_min, x_min, y_max, x_max])
-    return np.array(base_prior_boxes, dtype=np.float32)
+    for aspect_ratio in aspect_ratios:
+        height = current_scale / tf.sqrt(aspect_ratio)
+        width = current_scale * tf.sqrt(aspect_ratio)
+        base_prior_boxes.append([-height/2, -width/2, height/2, width/2])
+    # 1 extra pair for ratio 1
+    height = width = tf.sqrt(current_scale * next_scale)
+    base_prior_boxes.append([-height/2, -width/2, height/2, width/2])
+    return tf.cast(base_prior_boxes, dtype=tf.float32)
 
 def generate_prior_boxes(feature_map_shapes, aspect_ratios):
     """Generating top left prior boxes for given stride, height and width pairs of different aspect ratios.
@@ -180,23 +160,21 @@ def generate_prior_boxes(feature_map_shapes, aspect_ratios):
     """
     prior_boxes = []
     for i, feature_map_shape in enumerate(feature_map_shapes):
-        prior_box_count = len(aspect_ratios[i]) + 1
-        height_width_pairs = get_height_width_pairs(aspect_ratios[i], i+1, len(feature_map_shapes))
-        base_prior_boxes = generate_base_prior_boxes(1. / feature_map_shape, height_width_pairs)
+        base_prior_boxes = generate_base_prior_boxes(aspect_ratios[i], i+1, len(feature_map_shapes))
         #
-        grid_coords = np.arange(0, feature_map_shape)
+        stride = 1 / feature_map_shape
+        grid_coords = tf.cast(tf.range(0, feature_map_shape) / feature_map_shape + stride / 2, dtype=tf.float32)
+        grid_x, grid_y = tf.meshgrid(grid_coords, grid_coords)
+        flat_grid_x, flat_grid_y = tf.reshape(grid_x, (-1, )), tf.reshape(grid_y, (-1, ))
         #
-        grid_x, grid_y = np.meshgrid(grid_coords, grid_coords)
-        grid_map = np.vstack((grid_y.ravel(), grid_x.ravel(), grid_y.ravel(), grid_x.ravel())).transpose()
-        grid_map = grid_map / feature_map_shape
+        grid_map = tf.stack([flat_grid_y, flat_grid_x, flat_grid_y, flat_grid_x], -1)
         #
-        output_area = feature_map_shape ** 2
-        prior_boxes_for_feature_map = base_prior_boxes.reshape((1, prior_box_count, 4)) + \
-                                      grid_map.reshape((1, output_area, 4)).transpose((1, 0, 2))
-        prior_boxes_for_feature_map = prior_boxes_for_feature_map.reshape((output_area * prior_box_count, 4)).astype(np.float32)
+        prior_boxes_for_feature_map = tf.reshape(base_prior_boxes, (1, -1, 4)) + tf.reshape(grid_map, (-1, 1, 4))
+        prior_boxes_for_feature_map = tf.reshape(prior_boxes_for_feature_map, (-1, 4))
+        #
         prior_boxes.append(prior_boxes_for_feature_map)
-    prior_boxes = np.concatenate(prior_boxes, axis=0)
-    return np.clip(prior_boxes, 0, 1)
+    prior_boxes = tf.concat(prior_boxes, axis=0)
+    return tf.clip_by_value(prior_boxes, 0, 1)
 
 def normalize_bboxes(bboxes, height, width):
     """Normalizing bounding boxes.

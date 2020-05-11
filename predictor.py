@@ -18,18 +18,18 @@ else:
 #
 hyper_params = train_utils.get_hyper_params(backbone)
 #
-VOC_test_data, VOC_info = data_utils.get_dataset("voc/2007", "test")
-labels = data_utils.get_labels(VOC_info)
+test_data, info = data_utils.get_dataset("voc/2007", "test")
+labels = data_utils.get_labels(info)
 # We add 1 class for background
 hyper_params["total_labels"] = len(labels) + 1
 img_size = hyper_params["img_size"]
 
 if use_custom_images:
-    VOC_test_data = data_utils.get_image_data_from_folder(custom_image_path, img_size, img_size)
+    test_data = data_utils.get_image_data_from_folder(custom_image_path, img_size, img_size)
 else:
-    VOC_test_data = VOC_test_data.map(lambda x : data_utils.preprocessing(x, img_size, img_size))
+    test_data = test_data.map(lambda x : data_utils.preprocessing(x, img_size, img_size))
     padded_shapes, padding_values = data_utils.get_padded_batch_params()
-    VOC_test_data = VOC_test_data.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
+    test_data = test_data.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
 
 ssd_model = get_model(hyper_params)
 ssd_model_path = io_utils.get_model_path(backbone)
@@ -41,7 +41,7 @@ background_label = "bg"
 labels = [background_label] + labels
 bg_id = labels.index(background_label)
 
-for image_data in VOC_test_data:
+for image_data in test_data:
     img, _, _ = image_data
     pred_bbox_deltas, pred_labels = ssd_model.predict_on_batch(img)
     #
