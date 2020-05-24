@@ -31,8 +31,8 @@ def get_model(hyper_params):
     extra4_1 = Conv2D(128, (1, 1), strides=(1, 1), padding="valid", activation="relu", name="extra4_1")(extra3_2)
     extra4_2 = Conv2D(256, (3, 3), strides=(2, 2), padding="same", activation="relu", name="extra4_2")(extra4_1)
     ############################ Extra Feature Layers End ############################
-    pred_bbox_deltas, pred_labels = get_head_from_outputs(hyper_params, [first_conv, second_conv, extra1_2, extra2_2, extra3_2, extra4_2])
-    return Model(inputs=input, outputs=[pred_bbox_deltas, pred_labels])
+    pred_deltas, pred_labels = get_head_from_outputs(hyper_params, [first_conv, second_conv, extra1_2, extra2_2, extra3_2, extra4_2])
+    return Model(inputs=input, outputs=[pred_deltas, pred_labels])
 
 def init_model(model):
     """Initializing model with dummy data for load weights with optimizer state and also graph construction.

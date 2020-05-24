@@ -93,9 +93,8 @@ def get_model(hyper_params):
     # l2 normalization for each location in the feature map
     conv4_3_norm = L2Normalization(scale_factor)(conv4_3)
     #
-    pred_bbox_deltas, pred_labels = get_head_from_outputs(hyper_params, [conv4_3_norm, conv7, conv8_2, conv9_2, conv10_2, conv11_2])
-    #
-    return Model(inputs=input, outputs=[pred_bbox_deltas, pred_labels])
+    pred_deltas, pred_labels = get_head_from_outputs(hyper_params, [conv4_3_norm, conv7, conv8_2, conv9_2, conv10_2, conv11_2])
+    return Model(inputs=input, outputs=[pred_deltas, pred_labels])
 
 def init_model(model):
     """Initializing model with dummy data for load weights with optimizer state and also graph construction.

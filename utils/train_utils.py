@@ -84,8 +84,8 @@ def generator(dataset, prior_boxes, hyper_params):
     while True:
         for image_data in dataset:
             img, gt_boxes, gt_labels = image_data
-            actual_bbox_deltas, actual_labels = calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
-            yield img, (actual_bbox_deltas, actual_labels)
+            actual_deltas, actual_labels = calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params)
+            yield img, (actual_deltas, actual_labels)
 
 def calculate_actual_outputs(prior_boxes, gt_boxes, gt_labels, hyper_params):
     """Calculate ssd actual output values.

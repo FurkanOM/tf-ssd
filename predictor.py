@@ -1,5 +1,6 @@
 import tensorflow as tf
 from utils import bbox_utils, data_utils, drawing_utils, io_utils, train_utils
+from models.decoder import get_decoder_model
 
 args = io_utils.handle_args()
 if args.handle_gpu:
@@ -20,8 +21,8 @@ hyper_params = train_utils.get_hyper_params(backbone)
 #
 test_data, info = data_utils.get_dataset("voc/2007", "test")
 labels = data_utils.get_labels(info)
-# We add 1 class for background
-hyper_params["total_labels"] = len(labels) + 1
+labels = ["bg"] + labels
+hyper_params["total_labels"] = len(labels)
 img_size = hyper_params["img_size"]
 
 if use_custom_images:
@@ -36,30 +37,11 @@ ssd_model_path = io_utils.get_model_path(backbone)
 ssd_model.load_weights(ssd_model_path)
 
 prior_boxes = bbox_utils.generate_prior_boxes(hyper_params["feature_map_shapes"], hyper_params["aspect_ratios"])
-
-background_label = "bg"
-labels = [background_label] + labels
-bg_id = labels.index(background_label)
+ssd_decoder_model = get_decoder_model(ssd_model, prior_boxes, hyper_params)
 
 for image_data in test_data:
-    img, _, _ = image_data
-    pred_bbox_deltas, pred_labels = ssd_model.predict_on_batch(img)
-    #
-    pred_bbox_deltas *= hyper_params["variances"]
-    pred_bboxes = bbox_utils.get_bboxes_from_deltas(prior_boxes, pred_bbox_deltas)
-    pred_bboxes = tf.clip_by_value(pred_bboxes, 0, 1)
-    #
-    pred_labels = tf.cast(pred_labels, tf.float32)
-    reshaped_pred_bboxes = tf.reshape(pred_bboxes, (batch_size, pred_bbox_deltas.shape[1], 1, 4))
-    # Remove background predictions
-    pred_labels_map = tf.argmax(pred_labels, 2, output_type=tf.int32)
-    valid_cond = tf.not_equal(pred_labels_map, bg_id)
-    #
-    valid_bboxes = tf.expand_dims(reshaped_pred_bboxes[valid_cond], 0)
-    valid_labels = tf.expand_dims(pred_labels[valid_cond], 0)
-    #
-    nms_bboxes, nmsed_scores, nmsed_classes, valid_detections = bbox_utils.non_max_suppression(valid_bboxes, valid_labels,
-                                                                                               max_output_size_per_class=10,
-                                                                                               max_total_size=200, score_threshold=0.5)
-    denormalized_bboxes = bbox_utils.denormalize_bboxes(nms_bboxes[0], img_size, img_size)
-    drawing_utils.draw_bboxes_with_labels(img[0], denormalized_bboxes, nmsed_classes[0], nmsed_scores[0], labels)
+    imgs, _, _ = image_data
+    pred_bboxes, pred_labels, pred_scores = ssd_decoder_model.predict_on_batch(imgs)
+    for i, img in enumerate(imgs):
+        denormalized_bboxes = bbox_utils.denormalize_bboxes(pred_bboxes[i], img_size, img_size)
+        drawing_utils.draw_bboxes_with_labels(img, denormalized_bboxes, pred_labels[i], pred_scores[i], labels)

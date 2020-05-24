@@ -47,7 +47,7 @@ def get_head_from_outputs(hyper_params, outputs):
         outputs = list of ssd layers output to be used for prediction
 
     outputs:
-        pred_bbox_deltas = merged outputs for bbox delta head
+        pred_deltas = merged outputs for bbox delta head
         pred_labels = merged outputs for bbox label head
     """
     total_labels = hyper_params["total_labels"]
@@ -63,5 +63,5 @@ def get_head_from_outputs(hyper_params, outputs):
     pred_labels = HeadWrapper(total_labels, name="labels_head")(labels_head)
     pred_labels = Activation("softmax", name="conf")(pred_labels)
     #
-    pred_bbox_deltas = HeadWrapper(4, name="loc")(boxes_head)
-    return pred_bbox_deltas, pred_labels
+    pred_deltas = HeadWrapper(4, name="loc")(boxes_head)
+    return pred_deltas, pred_labels

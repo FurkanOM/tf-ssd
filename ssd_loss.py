@@ -5,24 +5,24 @@ class CustomLoss(object):
         self.neg_pos_ratio = tf.constant(neg_pos_ratio, dtype=tf.float32)
         self.loc_loss_alpha = tf.constant(loc_loss_alpha, dtype=tf.float32)
 
-    def loc_loss_fn(self, actual_bbox_deltas, pred_bbox_deltas):
+    def loc_loss_fn(self, actual_deltas, pred_deltas):
         """Calculating SSD localization loss value for only positive samples.
         inputs:
-            actual_bbox_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
-            pred_bbox_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
+            actual_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
+            pred_deltas = (batch_size, total_prior_boxes, [delta_y, delta_x, delta_h, delta_w])
 
         outputs:
             loc_loss = localization / regression / bounding box loss value
         """
         # Localization / bbox / regression loss calculation for all bboxes
         loc_loss_fn = tf.losses.Huber(reduction=tf.losses.Reduction.NONE)
-        loc_loss_for_all = loc_loss_fn(actual_bbox_deltas, pred_bbox_deltas)
+        loc_loss_for_all = loc_loss_fn(actual_deltas, pred_deltas)
         # After tf 2.2.0 version, the huber calculates mean over the last axis
         loc_loss_for_all = tf.cond(tf.greater(tf.rank(loc_loss_for_all), tf.constant(2)),
                                    lambda: tf.reduce_sum(loc_loss_for_all, axis=-1),
                                    lambda: loc_loss_for_all * tf.constant(4.0, dtype=tf.float32))
         #
-        pos_cond = tf.reduce_any(tf.not_equal(actual_bbox_deltas, tf.constant(0.0)), axis=2)
+        pos_cond = tf.reduce_any(tf.not_equal(actual_deltas, tf.constant(0.0)), axis=2)
         pos_mask = tf.cast(pos_cond, dtype=tf.float32)
         total_pos_bboxes = tf.reduce_sum(pos_mask, axis=1)
         #
