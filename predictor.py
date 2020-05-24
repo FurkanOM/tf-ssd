@@ -6,7 +6,7 @@ args = io_utils.handle_args()
 if args.handle_gpu:
     io_utils.handle_gpu_compatibility()
 
-batch_size = 1
+batch_size = 8
 use_custom_images = False
 custom_image_path = "data/images/"
 backbone = args.backbone

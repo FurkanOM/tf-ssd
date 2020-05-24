@@ -20,7 +20,7 @@ class CustomLoss(object):
         # After tf 2.2.0 version, the huber calculates mean over the last axis
         loc_loss_for_all = tf.cond(tf.greater(tf.rank(loc_loss_for_all), tf.constant(2)),
                                    lambda: tf.reduce_sum(loc_loss_for_all, axis=-1),
-                                   lambda: loc_loss_for_all * tf.constant(4.0, dtype=tf.float32))
+                                   lambda: loc_loss_for_all * tf.cast(tf.shape(pred_deltas)[-1], dtype=tf.float32))
         #
         pos_cond = tf.reduce_any(tf.not_equal(actual_deltas, tf.constant(0.0)), axis=2)
         pos_mask = tf.cast(pos_cond, dtype=tf.float32)

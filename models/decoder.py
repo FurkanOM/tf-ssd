@@ -40,7 +40,6 @@ class SSDDecoder(Layer):
         #
         pred_deltas *= self.variances
         pred_bboxes = bbox_utils.get_bboxes_from_deltas(self.prior_boxes, pred_deltas)
-        pred_bboxes = tf.clip_by_value(pred_bboxes, 0, 1)
         #
         pred_labels_map = tf.expand_dims(tf.argmax(pred_label_probs, -1), -1)
         pred_labels = tf.where(tf.not_equal(pred_labels_map, 0), pred_label_probs, tf.zeros_like(pred_label_probs))
