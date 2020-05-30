@@ -42,9 +42,10 @@ img_size = hyper_params["img_size"]
 train_data = train_data.map(lambda x : data_utils.preprocessing(x, img_size, img_size, augmentation.apply))
 val_data = val_data.map(lambda x : data_utils.preprocessing(x, img_size, img_size))
 
-padded_shapes, padding_values = data_utils.get_padded_batch_params()
-train_data = train_data.shuffle(batch_size*4).padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
-val_data = val_data.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padding_values)
+data_shapes = data_utils.get_data_shapes()
+padding_values = data_utils.get_padding_values()
+train_data = train_data.shuffle(batch_size*4).padded_batch(batch_size, padded_shapes=data_shapes, padding_values=padding_values)
+val_data = val_data.padded_batch(batch_size, padded_shapes=data_shapes, padding_values=padding_values)
 #
 ssd_model = get_model(hyper_params)
 ssd_custom_losses = CustomLoss(hyper_params["neg_pos_ratio"], hyper_params["loc_loss_alpha"])
