@@ -23,6 +23,7 @@ def apply(img, gt_boxes):
         img, gt_boxes = randomly_apply_operation(augmentation_method, img, gt_boxes)
     #
     img = tf.clip_by_value(img, 0, 1)
+    drawing_utils.draw_bboxes(tf.expand_dims(img, 0), tf.expand_dims(gt_boxes, 0))
     return img, gt_boxes
 
 def get_random_bool():
@@ -134,7 +135,8 @@ def expand_image(img, gt_boxes):
         final_height = final height of the image
         final_width = final width of the image
     """
-    height, width = tf.cast(tf.shape(img)[0], tf.float32), tf.cast(tf.shape(img)[1], tf.float32)
+    img_shape = tf.cast(tf.shape(img), dtype=tf.float32)
+    height, width = img_shape[0], img_shape[1]
     expansion_ratio = tf.random.uniform((), minval=1, maxval=4, dtype=tf.float32)
     final_height, final_width = tf.round(height * expansion_ratio), tf.round(width * expansion_ratio)
     pad_left = tf.round(tf.random.uniform((), minval=0, maxval=final_width - width, dtype=tf.float32))
@@ -170,17 +172,16 @@ def patch(img, gt_boxes):
     # Get random minimum overlap value
     min_overlap = get_random_min_overlap()
     #
-    begin, size, bbox_for_draw = tf.image.sample_distorted_bounding_box(
+    begin, size, new_limits = tf.image.sample_distorted_bounding_box(
         tf.shape(img),
         bounding_boxes=tf.expand_dims(gt_boxes, 0),
         min_object_covered=min_overlap)
     #
-    modified_img = tf.slice(img, begin, size)
-    img_shape = tf.cast(tf.shape(img), dtype=tf.float32)
-    size = tf.cast(size, dtype=tf.float32)
-    denorm_gt_boxes = bbox_utils.denormalize_bboxes(gt_boxes, img_shape[0], img_shape[1])
-    denorm_gt_boxes -= [begin[0], begin[1], begin[0], begin[1]]
-    modified_gt_boxes = bbox_utils.normalize_bboxes(denorm_gt_boxes, size[0], size[1])
-    modified_gt_boxes = tf.clip_by_value(modified_gt_boxes, 0, 1)
+    img = tf.slice(img, begin, size)
     #
-    return modified_img, modified_gt_boxes
+    y_min, x_min, y_max, x_max = tf.split(new_limits[0, 0], 4, axis=-1)
+    gt_boxes -= tf.concat([y_min, x_min, y_min, x_min], -1)
+    gt_boxes /= tf.concat([y_max-y_min, x_max-x_min, y_max-y_min, x_max-x_min], -1)
+    gt_boxes = tf.clip_by_value(gt_boxes, 0, 1)
+    #
+    return img, gt_boxes
