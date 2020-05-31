@@ -1,5 +1,5 @@
 import tensorflow as tf
-from utils import bbox_utils, drawing_utils
+from utils import bbox_utils
 
 def apply(img, gt_boxes):
     """Randomly applying data augmentation methods to image and ground truth boxes.
@@ -23,7 +23,6 @@ def apply(img, gt_boxes):
         img, gt_boxes = randomly_apply_operation(augmentation_method, img, gt_boxes)
     #
     img = tf.clip_by_value(img, 0, 1)
-    drawing_utils.draw_bboxes(tf.expand_dims(img, 0), tf.expand_dims(gt_boxes, 0))
     return img, gt_boxes
 
 def get_random_bool():
