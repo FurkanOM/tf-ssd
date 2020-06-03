@@ -176,6 +176,18 @@ def generate_prior_boxes(feature_map_shapes, aspect_ratios):
     prior_boxes = tf.concat(prior_boxes, axis=0)
     return tf.clip_by_value(prior_boxes, 0, 1)
 
+def renormalize_bboxes_with_min_max(bboxes, min_max):
+    """Renormalizing given bounding boxes to the new boundaries.
+    r = (x - min) / (max - min)
+    outputs:
+        bboxes = (total_bboxes, [y1, x1, y2, x2])
+        min_max = ([y_min, x_min, y_max, x_max])
+    """
+    y_min, x_min, y_max, x_max = min_max
+    renomalized_bboxes = bboxes - [y_min, x_min, y_min, x_min]
+    renomalized_bboxes /= [y_max-y_min, x_max-x_min, y_max-y_min, x_max-x_min]
+    return tf.clip_by_value(renomalized_bboxes, 0, 1)
+
 def normalize_bboxes(bboxes, height, width):
     """Normalizing bounding boxes.
     inputs:

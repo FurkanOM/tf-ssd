@@ -144,12 +144,11 @@ def expand_image(img, gt_boxes):
     pad_bottom = final_height - (height + pad_top)
     #
     mean, _ = tf.nn.moments(img, [0, 1])
-    #
     expanded_image = tf.pad(img, ((pad_top, pad_bottom), (pad_left, pad_right), (0,0)), constant_values=-1)
     expanded_image = tf.where(expanded_image == -1, mean, expanded_image)
-    denormalized_gt_boxes = bbox_utils.denormalize_bboxes(gt_boxes, height, width)
-    denormalized_gt_boxes += [pad_top, pad_left, pad_top, pad_left]
-    modified_gt_boxes = bbox_utils.normalize_bboxes(denormalized_gt_boxes, final_height, final_width)
+    #
+    min_max = tf.stack([-pad_top, -pad_left, pad_bottom+height, pad_right+width], -1) / [height, width, height, width]
+    modified_gt_boxes = bbox_utils.renormalize_bboxes_with_min_max(gt_boxes, min_max)
     #
     return expanded_image, modified_gt_boxes
 
@@ -178,10 +177,6 @@ def patch(img, gt_boxes):
         min_object_covered=min_overlap)
     #
     img = tf.slice(img, begin, size)
-    #
-    y_min, x_min, y_max, x_max = tf.split(new_limits[0, 0], 4, axis=-1)
-    gt_boxes -= tf.concat([y_min, x_min, y_min, x_min], -1)
-    gt_boxes /= tf.concat([y_max-y_min, x_max-x_min, y_max-y_min, x_max-x_min], -1)
-    gt_boxes = tf.clip_by_value(gt_boxes, 0, 1)
+    gt_boxes = bbox_utils.renormalize_bboxes_with_min_max(gt_boxes, new_limits[0, 0])
     #
     return img, gt_boxes
