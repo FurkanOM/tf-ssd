@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 
 def non_max_suppression(pred_bboxes, pred_labels, **kwargs):
     """Applying non maximum suppression.
@@ -183,9 +182,9 @@ def renormalize_bboxes_with_min_max(bboxes, min_max):
         bboxes = (total_bboxes, [y1, x1, y2, x2])
         min_max = ([y_min, x_min, y_max, x_max])
     """
-    y_min, x_min, y_max, x_max = min_max
-    renomalized_bboxes = bboxes - [y_min, x_min, y_min, x_min]
-    renomalized_bboxes /= [y_max-y_min, x_max-x_min, y_max-y_min, x_max-x_min]
+    y_min, x_min, y_max, x_max = tf.split(min_max, 4)
+    renomalized_bboxes = bboxes - tf.concat([y_min, x_min, y_min, x_min], -1)
+    renomalized_bboxes /= tf.concat([y_max-y_min, x_max-x_min, y_max-y_min, x_max-x_min], -1)
     return tf.clip_by_value(renomalized_bboxes, 0, 1)
 
 def normalize_bboxes(bboxes, height, width):
