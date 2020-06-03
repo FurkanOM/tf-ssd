@@ -33,16 +33,9 @@ python trainer.py -handle-gpu
 
 ## Trained Model and Examples
 
-Trained with VOC 0712 trainval
-
-Training and validation loss with MobileNetV2 backbone:
-
-![Training and validation loss](http://furkanomerustaoglu.com/wp-content/uploads/2020/04/epoch_loss.png)
-
-Model weights:
+Trained with VOC 0712 trainval model weights:
 
 * [ssd_mobilenet_v2_model_weights.h5](https://drive.google.com/open?id=1dLhuqIx9HoOtPSqCQlhbts7CjlXa5lCs) (~35 MB)
-* [ssd_vgg16_model_weights.h5](https://drive.google.com/open?id=1M-kvXTpwIguTfUVxFpt4DTMRuVhgumyJ) (~105 MB)
 
 | Trained with VOC 0712 trainval data with VGG16 backbone | Trained with VOC 0712 trainval data with MobileNetV2 backbone |
 | -------------- | -------------- |

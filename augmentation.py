@@ -174,6 +174,7 @@ def patch(img, gt_boxes):
     begin, size, new_limits = tf.image.sample_distorted_bounding_box(
         tf.shape(img),
         bounding_boxes=tf.expand_dims(gt_boxes, 0),
+        aspect_ratio_range=[0.5, 2.0],
         min_object_covered=min_overlap)
     #
     img = tf.slice(img, begin, size)
