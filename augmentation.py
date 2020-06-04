@@ -45,7 +45,7 @@ def randomly_apply_operation(operation, img, gt_boxes, *args):
     return tf.cond(
         get_random_bool(),
         lambda: operation(img, gt_boxes, *args),
-        lambda: (img, gt_boxes, *args)
+        lambda: (img, gt_boxes)
     )
 
 def random_brightness(img, gt_boxes, max_delta=0.12):
@@ -121,7 +121,7 @@ def get_random_min_overlap():
     i = tf.random.uniform((), minval=0, maxval=tf.shape(overlaps)[0], dtype=tf.int32)
     return overlaps[i]
 
-def expand_image(img, gt_boxes):
+def expand_image(img, gt_boxes, height, width):
     """Randomly expanding image and adjusting ground truth object coordinates.
     inputs:
         img = (height, width, depth)
@@ -134,8 +134,6 @@ def expand_image(img, gt_boxes):
         final_height = final height of the image
         final_width = final width of the image
     """
-    img_shape = tf.cast(tf.shape(img), dtype=tf.float32)
-    height, width = img_shape[0], img_shape[1]
     expansion_ratio = tf.random.uniform((), minval=1, maxval=4, dtype=tf.float32)
     final_height, final_width = tf.round(height * expansion_ratio), tf.round(width * expansion_ratio)
     pad_left = tf.round(tf.random.uniform((), minval=0, maxval=final_width - width, dtype=tf.float32))
@@ -165,18 +163,21 @@ def patch(img, gt_boxes):
         modified_gt_boxes = (ground_truth_object_count, [y1, x1, y2, x2])
             in normalized form [0, 1]
     """
+    img_shape = tf.cast(tf.shape(img), dtype=tf.float32)
+    org_height, org_width = img_shape[0], img_shape[1]
     # Randomly expand image and adjust bounding boxes
-    img, gt_boxes = randomly_apply_operation(expand_image, img, gt_boxes)
+    img, gt_boxes = randomly_apply_operation(expand_image, img, gt_boxes, org_height, org_width)
     # Get random minimum overlap value
     min_overlap = get_random_min_overlap()
     #
-    begin, size, new_limits = tf.image.sample_distorted_bounding_box(
+    begin, size, new_boundaries = tf.image.sample_distorted_bounding_box(
         tf.shape(img),
         bounding_boxes=tf.expand_dims(gt_boxes, 0),
         aspect_ratio_range=[0.5, 2.0],
         min_object_covered=min_overlap)
     #
     img = tf.slice(img, begin, size)
-    gt_boxes = bbox_utils.renormalize_bboxes_with_min_max(gt_boxes, new_limits[0, 0])
+    img = tf.image.resize(img, (org_height, org_width))
+    gt_boxes = bbox_utils.renormalize_bboxes_with_min_max(gt_boxes, new_boundaries[0, 0])
     #
     return img, gt_boxes
