@@ -4,7 +4,7 @@ import tensorflow_datasets as tfds
 from PIL import Image
 import numpy as np
 
-def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
+def preprocessing(image_data, final_height, final_width, augmentation_fn=None, evaluate=False):
     """Image resizing operation handled before batch operations.
     inputs:
         image_data = tensorflow dataset image_data
@@ -21,6 +21,10 @@ def preprocessing(image_data, final_height, final_width, augmentation_fn=None):
     gt_labels = tf.cast(image_data["objects"]["label"] + 1, tf.int32)
     img = tf.image.convert_image_dtype(img, tf.float32)
     img = tf.image.resize(img, (final_height, final_width))
+    if evaluate:
+        not_diff = tf.logical_not(image_data["objects"]["is_difficult"])
+        gt_boxes = gt_boxes[not_diff]
+        gt_labels = gt_labels[not_diff]
     if augmentation_fn:
         img, gt_boxes = augmentation_fn(img, gt_boxes)
     return img, gt_boxes, gt_labels

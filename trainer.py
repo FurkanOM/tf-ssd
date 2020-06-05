@@ -10,7 +10,7 @@ if args.handle_gpu:
     io_utils.handle_gpu_compatibility()
 
 batch_size = 32
-epochs = 200
+epochs = 150
 load_weights = False
 with_voc_2012 = True
 backbone = args.backbone
@@ -35,8 +35,8 @@ if with_voc_2012:
     train_data = train_data.concatenate(voc_2012_data)
 
 labels = data_utils.get_labels(info)
-# We add 1 class for background
-hyper_params["total_labels"] = len(labels) + 1
+labels = ["bg"] + labels
+hyper_params["total_labels"] = len(labels)
 img_size = hyper_params["img_size"]
 
 train_data = train_data.map(lambda x : data_utils.preprocessing(x, img_size, img_size, augmentation.apply))

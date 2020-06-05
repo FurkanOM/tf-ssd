@@ -31,11 +31,7 @@ If you have GPU issues you can use **-handle-gpu** flag with these commands:
 python trainer.py -handle-gpu
 ```
 
-## Trained Model and Examples
-
-Trained with VOC 0712 trainval model weights:
-
-* [ssd_mobilenet_v2_model_weights.h5](https://drive.google.com/open?id=1dLhuqIx9HoOtPSqCQlhbts7CjlXa5lCs) (~35 MB)
+## Examples
 
 | Trained with VOC 0712 trainval data with VGG16 backbone | Trained with VOC 0712 trainval data with MobileNetV2 backbone |
 | -------------- | -------------- |
